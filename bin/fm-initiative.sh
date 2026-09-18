@@ -18,16 +18,22 @@
 #   list: {} -> configured, initiatives[{id,title,source,state}]
 #     state is active, completed, or archived; unconfigured homes return []
 #   show: id; resolve: [query]; brief: id, row; reconcile: [id]
+#     reconcile without id covers active initiatives only; a completed or
+#     archived initiative is reverified only when named by id
 #   dispatch-check: task                        verify approved source/scope
-#   capture: task, event (spawn|merge|local-intent|local|local-retry|delivery|teardown)
+#   capture: task, event (spawn|merge|local-intent|local|local-retry|delivery|teardown|discard)
 #     merge takes pr; local-intent/local take before, after, target (full IDs)
-#     local-intent durably pins the approved update before Git runs; local-retry
-#     verifies it without merging and returns landed; delivery retains the
-#     execution owner's no-mistakes proof before cleanup acquires its locks
+#     local-intent durably pins the approved update before Git runs and replaces
+#     an earlier intent only when the target proves it was never applied;
+#     local-retry verifies it without merging, returns landed, and with [tip]
+#     refuses branch commits beyond the recorded landing; delivery retains the
+#     execution owner's no-mistakes proof before cleanup acquires its locks;
+#     discard is teardown under explicit --force authority and records the
+#     abandoned attempt when no landing or delivery evidence exists
 #   recover: id, authority                      accept regenerated companion
 #   verify-provider: pr, repo, target             read-only capability check
 # Internal lifecycle callers may use:
-#   fm-initiative.sh capture-task <task> <event> [pr|before after target]
+#   fm-initiative.sh capture-task <task> <event> [pr|tip|before after target]
 #   fm-initiative.sh check-task <task>
 #
 # config/initiative.json v1 pins home/data/state/config, vault and disjoint human
@@ -42,11 +48,13 @@
 # The human note is READ ONLY for ALL operations, including registration/archive.
 # New records reserve a readable companion basename (<title> - Status.md), reject
 # case-insensitive collisions, and retain that name independently of identity.
-# Earlier records without that field retain their UUID path, never silently moved.
 # Only the registered generated companion is published for reading/embedding.
 # Only delivery capture reads the execution owner (outside cleanup/record locks);
 # other captures use local evidence and never access the vault or forge.
-# Teardown refuses missing delivery/local landing evidence.
+# Teardown refuses missing delivery/local landing evidence unless forced.
+# Cleanup captures (delivery|teardown) write private records only, so they stay
+# open to the supervision branch's ordinary landed-work teardown.
+# An unreadable unrelated note is skipped; the registered note must be readable.
 # Reconcile collects owner observations outside the record
 # lock, then refuses stale observations. Same-home writers serialize with flock.
 # Hooks are inert without configuration. No new worker, daemon, or merge authority.
@@ -78,7 +86,10 @@ case "$1" in
     [ -z "${FM_TASK_ID:-}" ] || { echo 'error: initiative mutation belongs to the publishing supervisor, not a worker' >&2; exit 2; }
     # shellcheck source=bin/fm-lease-lib.sh
     . "$SCRIPT_DIR/fm-lease-lib.sh"
-    fm_lease_forbid_branch initiative-publication
+    case "$1:${3:-}" in
+      capture-task:delivery|capture-task:teardown) ;;
+      *) fm_lease_forbid_branch initiative-publication ;;
+    esac
     # shellcheck source=bin/fm-session-lock-lib.sh
     . "$SCRIPT_DIR/fm-session-lock-lib.sh"
     if fm_session_lock_foreign_owner_live "$STATE"; then

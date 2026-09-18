@@ -1221,8 +1221,10 @@ The helper's `draft` command returns starter Markdown for the human to create in
 Registration reads its stable identity marker; it never creates, edits, moves, or replaces the human note.
 New generated companions use a stable readable filename such as `<generated>/Salesforce - Status.md`; the record retains that name independently of the private initiative UUID.
 The human may add an embed such as `![[Firstmate status/Salesforce - Status]]` to their plan; the integration does not insert it.
-Registration refuses a filename collision and requests a distinct title, while earlier private records retain their existing paths rather than silently breaking links.
+Registration refuses a filename collision and requests a distinct title.
+An unreadable or vanished unrelated note is skipped, while the registered note must stay readable and duplicate identities among readable notes still refuse.
 An offline vault retains private facts and pending publication, and normal main wake acknowledgement or deferred startup retries reconciliation.
+That automatic reconciliation covers active initiatives only; a completed or archived initiative is reverified only by `reconcile` with its `id`.
 A changed generated companion needs explicit recovery; its previous content remains private evidence.
 The generated namespace is reserved for Firstmate, and is not a human-authoring surface or an editor compare-and-swap service.
 
@@ -1231,4 +1233,6 @@ GitLab final-object enrichment is not qualified in this implementation; linked G
 Unlinked GitLab work retains its current behavior.
 The existing approved fast-forward owner retains the pinned local result before updating Git, then confirms its receipt while its control lock is held.
 A merge with failed evidence retention is reported as landed with pending evidence, never retried as another merge.
+A retry refuses task-branch commits beyond the recorded landing until the row is reopened with the newly accepted scope, and a recorded intent is replaced only when the unchanged target proves Git never applied it.
 No-mistakes delivery proof is collected through the existing execution-state owner before cleanup locks, then checked against the task generation and code before cleanup can proceed.
+Ordinary cleanup stays strict and remains open to the Pi supervision branch because it writes private records only; `bin/fm-teardown.sh --force` with explicit discard authority records the abandoned attempt instead of demanding delivery evidence.

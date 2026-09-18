@@ -524,6 +524,9 @@ print('api_response:\\n  body: '+base64.b64encode(json.dumps(value).encode()).de
         self.call('complete',dict(id=self.iid,authority='completed scope accepted',criteria='criteria met',disposition='no remaining calls'))
         self.git('reset','--hard',self.before)
         self.call('reconcile',{})
+        self.assertTrue(self.record()['completed'])
+        self.assertEqual(self.record()['rows'][row]['status'],'Done')
+        self.call('reconcile',dict(id=self.iid))
         self.assertFalse(self.record()['completed'])
         self.assertEqual(self.record()['rows'][row]['status'],'Blocked')
         self.assertNotIn(sha[:12],(self.generated()).read_text())
@@ -786,5 +789,127 @@ print('api_response:\\n  body: '+base64.b64encode(json.dumps(value).encode()).de
         self.meta('generation-2')
         self.call('capture',dict(task='task-1',event='spawn'))
         self.assertEqual(self.record()['rows'][row]['attempt']['generation'],'generation-2')
+
+    def hook(self,*args,good=True,env=None):
+        r=subprocess.run(['bash',str(self.code/'fm-initiative.sh'),*args],env=env or self.env,text=True,capture_output=True)
+        self.assertEqual(r.returncode==0,good,r.stdout+r.stderr)
+        return r
+
+    def test_branch_actor_keeps_ordinary_cleanup_capture_only(self):
+        row,sha=self.local_delivery(); self.merge_local()
+        branch=dict(self.env,FM_SUPERVISION_ACTOR='branch')
+        for event in ('delivery','teardown'):
+            self.hook('capture-task','unbound-task',event,env=branch)
+            self.hook('capture-task','task-1',event,env=branch)
+        self.assertEqual(self.record()['rows'][row]['landing']['commit'],sha)
+        self.hook('capture-task','task-1','discard',good=False,env=branch)
+        self.hook('capture-task','task-1','spawn',good=False,env=branch)
+        self.call('reconcile',{},False,branch)
+        self.assertEqual(self.note.read_bytes(),self.original)
+
+    def test_local_retry_refuses_new_branch_commits(self):
+        row,sha=self.local_delivery(); self.merge_local()
+        self.git('checkout','-q','fm/task-1')
+        (self.repo/'file').write_text('follow-up'); self.git('commit','-qam','follow-up')
+        self.git('checkout','-q','main')
+        result=self.merge_local(False)
+        self.assertIn('reopen',result.stderr)
+        self.assertNotIn('recovered',result.stdout)
+        self.assertEqual(self.git('rev-parse','main'),sha)
+        self.assertEqual(self.record()['rows'][row]['landing']['commit'],sha)
+
+    def test_unapplied_local_intent_is_replaced_and_kept_in_history(self):
+        row,first=self.local_delivery(); real=shutil.which('git')
+        self.tool('git','import os,sys\nif "merge" in sys.argv: sys.exit(56)\nos.execv('+repr(real)+',["git",*sys.argv[1:]])\n')
+        self.merge_local(False); (self.fake/'git').unlink()
+        self.git('checkout','-q','fm/task-1')
+        (self.repo/'file').write_text('second'); self.git('commit','-qam','second')
+        second=self.git('rev-parse','HEAD'); self.git('checkout','-q','main')
+        self.merge_local()
+        current=self.record()['rows'][row]
+        self.assertEqual(current['landing']['commit'],second)
+        self.assertIsNone(current['local_intent'])
+        self.assertEqual([v['commit'] for v in current['local_intent_history']],[first])
+
+    def test_applied_local_intent_is_never_replaced(self):
+        row,first=self.local_delivery(); self.intercept_capture('local')
+        self.merge_local(False); self.restore_capture()
+        self.git('checkout','-q','fm/task-1')
+        (self.repo/'file').write_text('second'); self.git('commit','-qam','second')
+        second=self.git('rev-parse','HEAD'); self.git('checkout','-q','main')
+        self.call('capture',dict(task='task-1',event='local-intent',before=first,after=second,target='main'),False)
+        self.assertEqual(self.record()['rows'][row]['local_intent']['commit'],first)
+
+    def test_reopen_clears_local_intent_and_delivery_proof(self):
+        row,first=self.local_delivery(); real=shutil.which('git')
+        self.tool('git','import os,sys\nif "merge" in sys.argv: sys.exit(56)\nos.execv('+repr(real)+',["git",*sys.argv[1:]])\n')
+        self.merge_local(False); (self.fake/'git').unlink()
+        self.call('reopen',dict(id=self.iid,row=row,scope='New accepted scope',authority='accepted reopening'))
+        current=self.record()['rows'][row]
+        self.assertIsNone(current['local_intent']); self.assertIsNone(current['delivery_verified'])
+        self.assertEqual([v['commit'] for v in current['local_intent_history']],[first])
+        self.call('reconcile',{})
+        self.assertEqual(self.record()['rows'][row]['status'],'Planned')
+        self.assertNotIn('intent',self.record()['rows'][row]['freshness'])
+
+    def test_forced_discard_records_abandonment_without_delivery_evidence(self):
+        for mode in ('no-mistakes','local-only'):
+            with self.subTest(mode=mode):
+                if mode=='no-mistakes':
+                    row,_=self.forge(merged=False,mode=mode)
+                    self.execution_observation('state: failed · source: run-step · failed')
+                    self.call('capture',dict(task='task-1',event='delivery'),False)
+                else:
+                    self.meta('generation-2'); self.call('reopen',dict(id=self.iid,row=row,scope='Local scope',authority='accepted'))
+                    self.call('capture',dict(task='task-1',event='spawn'))
+                self.call('capture',dict(task='task-1',event='teardown'),False)
+                self.call('capture',dict(task='task-1',event='discard'))
+                current=self.record()['rows'][row]
+                self.assertIsNone(current['landing']); self.assertFalse(current['started'])
+                self.assertEqual(current['abandoned'][-1]['attempt']['generation'],current['attempt']['generation'])
+                self.assertEqual(current['obligation']['event'],'discard')
+        self.assertEqual(self.note.read_bytes(),self.original)
+
+    def test_forced_discard_still_retains_available_landing_evidence(self):
+        row,sha=self.local_delivery(); self.intercept_capture('local')
+        self.merge_local(False); self.restore_capture()
+        self.call('capture',dict(task='task-1',event='discard'))
+        current=self.record()['rows'][row]
+        self.assertEqual(current['landing']['commit'],sha); self.assertNotIn('abandoned',current)
+
+    def test_unreadable_unrelated_note_blocks_nothing_but_registered_note_does(self):
+        self.bind()
+        unrelated=self.vault/'Work/Unrelated.md'; unrelated.write_text('shared elsewhere\n')
+        os.link(unrelated,self.root/'unrelated-alias')
+        (self.vault/'Archive/Huge.md').write_bytes(b'x'*(8*1024*1024+1))
+        self.call('dispatch-check',dict(task='task-1'))
+        self.call('reconcile',{})
+        self.assertFalse(self.record()['publication_error']); self.assertFalse(self.record()['design_pending'])
+        copy=self.vault/'Work/Copy.md'; copy.write_bytes(self.original)
+        self.call('dispatch-check',dict(task='task-1'),False)
+        copy.unlink()
+        os.link(self.note,self.root/'note-alias')
+        self.call('dispatch-check',dict(task='task-1'),False)
+        self.assertEqual(self.note.read_bytes(),self.original)
+
+    def test_position_cannot_restructure_the_companion(self):
+        self.bind()
+        self.call('position',dict(id=self.iid,text='Ready.\n## Tasks\n| Task | x |\n<b>bold</b>',authority='accepted'))
+        lines=self.generated().read_text().splitlines()
+        self.assertEqual(lines.count('## Tasks'),1)
+        self.assertEqual(len([v for v in lines if v.startswith('|')]),3)
+        self.assertFalse(any('<b>' in v for v in lines))
+
+    def test_automatic_reconcile_skips_terminal_initiatives(self):
+        row,_=self.forge(); self.call('reconcile',{})
+        self.call('complete',dict(id=self.iid,criteria='met',disposition='none remain',authority='accepted'))
+        log=self.root/'provider.log'
+        self.tool('gh-axi','import os,sys\nopen('+repr(str(log))+',"a").write("call\\n")\nsys.exit(1)\n')
+        self.assertEqual(self.call('reconcile',{}),{'reconciled':0})
+        self.assertFalse(log.exists())
+        self.assertEqual(self.record()['rows'][row]['status'],'Done')
+        self.call('reconcile',dict(id=self.iid))
+        self.assertTrue(log.exists())
+        self.assertTrue(self.record()['rows'][row]['freshness'])
 
 if __name__=='__main__': unittest.main()

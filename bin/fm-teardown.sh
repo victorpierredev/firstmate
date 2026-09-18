@@ -342,7 +342,10 @@ META="$STATE/$ID.meta"
 # before any cleanup lock. The later local capture rechecks task incarnation.
 if [ -e "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/initiative.json" ] || [ -L "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/initiative.json" ]; then
   FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_DATA_OVERRIDE="$DATA" \
-    "$SCRIPT_DIR/fm-initiative.sh" capture-task "$ID" delivery >/dev/null || exit 1
+    "$SCRIPT_DIR/fm-initiative.sh" capture-task "$ID" delivery >/dev/null || {
+    [ "$FORCE" = --force ] || exit 1
+    echo "warning: delivery proof for $ID was not retained; forced cleanup records the attempt as abandoned" >&2
+  }
 fi
 TREEHOUSE_PROJECT_LOCK=
 TREEHOUSE_PROJECT_LOCK_HELD=0
@@ -3389,11 +3392,14 @@ else
 fi
 
 # Persist either landing evidence or an identity-complete obligation before
-# any destructive cleanup. This touches local private records only, not a vault
+# any destructive cleanup; explicit --force discard authority instead records
+# the abandoned attempt when no such evidence exists. This touches local private records only, not a vault
 # or forge; failure retains the source metadata and worktree for a safe retry.
 if [ "$KIND" != secondmate ] && { [ -e "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/initiative.json" ] || [ -L "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/initiative.json" ]; }; then
+  INITIATIVE_CLEANUP_EVENT=teardown
+  [ "$FORCE" != --force ] || INITIATIVE_CLEANUP_EVENT=discard
   FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_DATA_OVERRIDE="$DATA" \
-    "$SCRIPT_DIR/fm-initiative.sh" capture-task "$ID" teardown >/dev/null || {
+    "$SCRIPT_DIR/fm-initiative.sh" capture-task "$ID" "$INITIATIVE_CLEANUP_EVENT" >/dev/null || {
     echo "error: initiative evidence for $ID could not be retained; refusing cleanup" >&2
     exit 1
   }

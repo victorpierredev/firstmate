@@ -76,7 +76,8 @@ MODE=$(grep '^mode=' "$META" | cut -d= -f2- || true)
 INITIATIVE_CONFIGURED=0
 if [ -e "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/initiative.json" ] || [ -L "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/initiative.json" ]; then
   INITIATIVE_CONFIGURED=1
-  recovery=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-initiative.sh" capture-task "$ID" local-retry) || exit 1
+  retry_tip=$(git -C "$PROJ" rev-parse --verify --quiet "refs/heads/fm/$ID^{commit}" || true)
+  recovery=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-initiative.sh" capture-task "$ID" local-retry ${retry_tip:+"$retry_tip"}) || exit 1
   if printf '%s\n' "$recovery" | jq -e '.landed == true' >/dev/null; then
     echo "local landing evidence recovered for $ID; no merge repeated"
     exit 0

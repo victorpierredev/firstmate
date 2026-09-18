@@ -188,9 +188,8 @@ def human(c,r):
     matches=[]
     for path in human_files(c):
         if path.is_symlink(): continue
-        data=read(path)
-        try: identity=marker(data)
-        except (Refusal,ValueError):
+        try: data=read(path); identity=marker(data)
+        except (OSError,Refusal,ValueError):
             if str(path.relative_to(c['vault']))==r['note']: raise
             continue
         if identity==r['id']: matches.append((path,data))
@@ -242,7 +241,7 @@ def rendered(r):
         else: next_action='No further implementation is planned.'
     out=[f'# {escape(r["title"])}','', '> This status note is generated. Make changes in the initiative plan.','', '## Goal','',escape(r['goal']),'',
          '## Current state','',state]
-    if r.get('position'): out+=['',r['position']]
+    if r.get('position'): out+=['',escape(r['position'])]
     out+=['','## Completed work','']
     out += ['- '+escape(v['name'])+': '+escape(v['explanation']) for v in completed] or ['No tasks are complete yet.']
     out+=['','## Next action','',escape(next_action)]
@@ -273,9 +272,7 @@ def generated_owner(c):
     return root
 
 def companion(c,r):
-    # Earlier private records keep their registered UUID path until explicitly
-    # migrated; a display-name change must never silently break existing links.
-    name=r.get('companion',r['id']+'.md')
+    name=r['companion']
     check(len(relative(name).parts)==1 and name.endswith('.md'),'invalid companion filename')
     return generated_owner(c)/name
 
@@ -353,6 +350,14 @@ def recover_local(row,m=None):
     git_contains(row['repo'],intent['before'],row['target'])
     return {**intent,'provenance':'fm-merge-local'}
 
+def retire_unapplied_intent(row):
+    """Retire a durable intent only when the target proves Git never applied it."""
+    intent=row['local_intent']
+    tip=command(['git','-C',row['repo'],'rev-parse','refs/heads/'+row['target']])
+    applied=subprocess.run(['git','-C',row['repo'],'merge-base','--is-ancestor',intent['commit'],tip],capture_output=True,timeout=15)
+    check(tip==intent['before'] and applied.returncode!=0,'a different local landing intent requires reconciliation')
+    row.setdefault('local_intent_history',[]).append(intent); row['local_intent']=None
+
 def remember_landing(row,landing):
     if landing not in row['landing_history']: row['landing_history'].append(copy.deepcopy(landing))
     row.update(landing=landing,obligation=None,local_intent=None)
@@ -361,10 +366,20 @@ def verified_delivery(row,m,current):
     check(re.match(r'^state: done .*source: run-step(?:\s|$)',current),'selected no-mistakes delivery has not been verified')
     return {'generation':m['spawn_gen'],'scope':row['scope_revision'],'observation':current,'head':command(['git','-C',m['worktree'],'rev-parse','HEAD'])}
 
+def cleanup_evidence(row,m):
+    if m.get('mode')=='local-only':
+        receipt=recover_local(row,m)
+        check(receipt is not None,'local landing evidence is missing; retain task before cleanup')
+        remember_landing(row,receipt)
+    if m.get('mode')=='no-mistakes':
+        proof=row.get('delivery_verified') or {}
+        check(proof.get('generation')==m['spawn_gen'] and proof.get('scope')==row['scope_revision'],'verified delivery evidence is missing; retain task before cleanup')
+        check(proof.get('head')==command(['git','-C',m['worktree'],'rev-parse','HEAD']),'task code changed after delivery verification; retain task before cleanup')
+
 def capture(c,q):
     task=token(q['task']); event=q['event']
-    check(event in ('spawn','merge','local-intent','local','local-retry','delivery','teardown'),'unknown lifecycle event')
-    observed_meta=None; observed_head=None; current=None; landed=False
+    check(event in ('spawn','merge','local-intent','local','local-retry','delivery','teardown','discard'),'unknown lifecycle event')
+    observed_meta=None; observed_head=None; current=None; landed=False; unlanded=False
     # Read the execution owner before the initiative lock and, at the caller,
     # before cleanup takes any destructive-operation locks.
     if event=='delivery' and bindings(task):
@@ -407,6 +422,10 @@ def capture(c,q):
                         try: remember_landing(row,recover_local(row,m))
                         except Refusal: pass
                     landed=bool(row.get('landing'))
+                    if landed and q.get('tip'):
+                        check(SHA.fullmatch(q['tip']),'full commit ID required')
+                        contained=subprocess.run(['git','-C',row['repo'],'merge-base','--is-ancestor',q['tip'],'refs/heads/'+row['target']],capture_output=True,timeout=15)
+                        unlanded=unlanded or contained.returncode!=0
                 if event in ('local-intent','local'):
                     check(m.get('mode')=='local-only' and q['target']==row['target'],'wrong local landing mode or target')
                     git_contains(row['repo'],q['before'],row['target'])
@@ -417,21 +436,22 @@ def capture(c,q):
                     receipt={'commit':q['after'],'before':q['before'],'repo':row['repo'],'target':row['target'],'scope':row['scope_revision'],'generation':m['spawn_gen']}
                     if event=='local-intent':
                         check(q['before']!=q['after'],'no new local integration result to record')
-                        check(not row.get('local_intent') or row['local_intent']==receipt,'a different local landing intent requires reconciliation')
+                        if row.get('local_intent') and row['local_intent']!=receipt: retire_unapplied_intent(row)
                         row['local_intent']=receipt
                     else:
                         check(not row.get('local_intent') or row['local_intent']==receipt,'local receipt differs from its durable intent')
                         remember_landing(row,{**receipt,'provenance':'fm-merge-local'})
-                if event=='teardown' and not row.get('landing'):
-                    if m.get('mode')=='local-only':
-                        receipt=recover_local(row,m)
-                        check(receipt is not None,'local landing evidence is missing; retain task before cleanup')
-                        remember_landing(row,receipt)
-                    if m.get('mode')=='no-mistakes':
-                        proof=row.get('delivery_verified') or {}
-                        check(proof.get('generation')==m['spawn_gen'] and proof.get('scope')==row['scope_revision'],'verified delivery evidence is missing; retain task before cleanup')
-                        check(proof.get('head')==command(['git','-C',m['worktree'],'rev-parse','HEAD']),'task code changed after delivery verification; retain task before cleanup')
+                if event in ('teardown','discard') and not row.get('landing'):
+                    try: cleanup_evidence(row,m)
+                    except Refusal as e:
+                        if event!='discard': raise
+                        row.setdefault('abandoned',[]).append({'attempt':copy.deepcopy(proposed),'reason':str(e)})
+                        row['started']=False
+                        if row.get('local_intent'):
+                            try: retire_unapplied_intent(row)
+                            except Refusal: pass
             save(r)
+    check(not unlanded,'task branch has commits beyond its recorded landing; reopen the row with the newly accepted scope before merging again')
     return {'captured':task,'event':event,'landed':landed}
 
 def github(path):
@@ -534,7 +554,7 @@ def observe(row, allow_landing=True):
     return result
 
 def reconcile(c, selected=None):
-    snapshots=[load(selected)] if selected else records()
+    snapshots=[load(selected)] if selected else [r for r in records() if not r['completed'] and not r['archived']]
     for snapshot in snapshots:
         updates={}
         try:
@@ -640,7 +660,7 @@ def main(action,q):
             stem=' '.join(re.sub(r'[\\/:*?"<>|#^\[\]]',' ',title).split()).strip('. ')[:120].rstrip('. ')
             check(stem,'initiative title needs a readable filename')
             name=stem+' - Status.md'
-            check(not any(p.name.casefold()==name.casefold() for p in generated_owner(c).iterdir()) and not any(r.get('companion','').casefold()==name.casefold() for r in records()),'companion name already reserved; use a distinct initiative title')
+            check(not any(p.name.casefold()==name.casefold() for p in generated_owner(c).iterdir()) and not any(r['companion'].casefold()==name.casefold() for r in records()),'companion name already reserved; use a distinct initiative title')
             r={'version':1,'home':str(HOME),'id':identity,'title':text(q['title']),'goal':text(q['goal']),'note':note,'source':src,'revision':0,'rows':{},'accepted':None,'design_history':[],'design_pending':False,'published':None,'pending_publication':None,'publication_error':'','completed':False,'archived':False}
             r['companion']=name
             human(c,r); save(r)
@@ -679,7 +699,8 @@ def main(action,q):
                 elif action=='retire': row['retired']=True
                 elif action=='reopen':
                     if row.get('attempt'): row.setdefault('retired_generations',[]).append(row['attempt']['generation'])
-                    scope=text(q['scope']); row.update(scope=scope,scope_revision=str(uuid.uuid4()),landing=None,attempt=None,coverage=None,obligation=None,started=False,status='Planned',retired=False)
+                    if row.get('local_intent'): row.setdefault('local_intent_history',[]).append(row['local_intent'])
+                    scope=text(q['scope']); row.update(scope=scope,scope_revision=str(uuid.uuid4()),landing=None,attempt=None,coverage=None,obligation=None,local_intent=None,delivery_verified=None,started=False,status='Planned',retired=False)
                     r['completed']=False
                 else:
                     pr=source('pr',q['pr']); row['coverage']={'pr':pr['url'],'scope':row['scope_revision'],'authority':authority}
@@ -717,6 +738,7 @@ if __name__=='__main__':
             else:
                 action='capture'; q['event']=sys.argv[3]
                 if q['event']=='merge': q['pr']=sys.argv[4]
+                if q['event']=='local-retry' and len(sys.argv)>4: q['tip']=sys.argv[4]
                 if q['event'] in ('local-intent','local'): q.update(before=sys.argv[4],after=sys.argv[5],target=sys.argv[6])
         else:
             q=json.loads(sys.stdin.read() if len(sys.argv)>2 and sys.argv[2]=='-' else Path(sys.argv[2]).read_text()) if len(sys.argv)>2 else {}
