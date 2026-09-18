@@ -912,4 +912,25 @@ print('api_response:\\n  body: '+base64.b64encode(json.dumps(value).encode()).de
         self.assertTrue(log.exists())
         self.assertTrue(self.record()['rows'][row]['freshness'])
 
+    def test_terminal_failed_publication_recovers_automatically_without_provider(self):
+        row,_=self.forge(); self.call('reconcile',{})
+        log=self.root/'provider.log'
+        self.tool('gh-axi','import sys\nopen('+repr(str(log))+',"a").write("call\\n")\nsys.exit(1)\n')
+        self.crash('complete',dict(id=self.iid,criteria='met',disposition='none remain',authority='accepted'),'pending')
+        self.assertTrue(self.record()['completed']); self.assertTrue(self.record()['pending_publication'])
+        self.assertNotIn('The initiative is complete.',self.generated().read_text())
+        companion=self.record()['companion']
+        offline=self.root/'offline'; self.vault.rename(offline)
+        self.assertEqual(self.call('reconcile',{}),{'reconciled':1})
+        self.assertTrue(self.record()['publication_error'])
+        offline.rename(self.vault)
+        self.assertEqual(self.call('reconcile',{}),{'reconciled':1})
+        current=self.record()
+        self.assertFalse(current['publication_error']); self.assertIsNone(current['pending_publication'])
+        self.assertTrue(current['completed']); self.assertEqual(current['rows'][row]['status'],'Done')
+        self.assertIn('The initiative is complete.',(self.vault/'Generated'/companion).read_text())
+        self.assertEqual(self.call('reconcile',{}),{'reconciled':0})
+        self.assertFalse(log.exists())
+        self.assertEqual(self.note.read_bytes(),self.original)
+
 if __name__=='__main__': unittest.main()

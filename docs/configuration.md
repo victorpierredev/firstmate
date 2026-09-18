@@ -1224,7 +1224,7 @@ The human may add an embed such as `![[Firstmate status/Salesforce - Status]]` t
 Registration refuses a filename collision and requests a distinct title.
 An unreadable or vanished unrelated note is skipped, while the registered note must stay readable and duplicate identities among readable notes still refuse.
 An offline vault retains private facts and pending publication, and normal main wake acknowledgement or deferred startup retries reconciliation.
-That automatic reconciliation covers active initiatives only; a completed or archived initiative is reverified only by `reconcile` with its `id`.
+That automatic reconciliation observes active initiatives only; for a completed or archived initiative it retries only a pending or failed publication, and lifecycle or provider reverification needs `reconcile` with its `id`.
 A changed generated companion needs explicit recovery; its previous content remains private evidence.
 The generated namespace is reserved for Firstmate, and is not a human-authoring surface or an editor compare-and-swap service.
 

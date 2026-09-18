@@ -18,8 +18,9 @@
 #   list: {} -> configured, initiatives[{id,title,source,state}]
 #     state is active, completed, or archived; unconfigured homes return []
 #   show: id; resolve: [query]; brief: id, row; reconcile: [id]
-#     reconcile without id covers active initiatives only; a completed or
-#     archived initiative is reverified only when named by id
+#     reconcile without id observes active initiatives only; a completed or
+#     archived initiative only has pending or failed publication retried, and
+#     is reverified only when named by id
 #   dispatch-check: task                        verify approved source/scope
 #   capture: task, event (spawn|merge|local-intent|local|local-retry|delivery|teardown|discard)
 #     merge takes pr; local-intent/local take before, after, target (full IDs)

@@ -554,8 +554,17 @@ def observe(row, allow_landing=True):
     return result
 
 def reconcile(c, selected=None):
-    snapshots=[load(selected)] if selected else [r for r in records() if not r['completed'] and not r['archived']]
+    snapshots=[load(selected)] if selected else records()
+    reconciled=0
     for snapshot in snapshots:
+        if not selected and (snapshot['completed'] or snapshot['archived']):
+            if snapshot.get('pending_publication') or snapshot.get('publication_error'):
+                with locked():
+                    r=load(snapshot['id'])
+                    if r['revision']==snapshot['revision']: publish(c,r); notify(r)
+                reconciled+=1
+            continue
+        reconciled+=1
         updates={}
         try:
             design_pending=bool(snapshot.get('accepted') and digest(human(c,snapshot))!=snapshot['accepted']['digest'])
@@ -575,7 +584,7 @@ def reconcile(c, selected=None):
             try: r['design_pending']=bool(r.get('accepted') and digest(human(c,r))!=r['accepted']['digest'])
             except (OSError,Refusal,ValueError) as e: r['publication_error']=str(e)
             save(r); publish(c,r); notify(r)
-    return {'reconciled':len(snapshots)}
+    return {'reconciled':reconciled}
 
 def configure(q):
     vault=Path(text(q['vault'])).resolve(strict=True)
