@@ -1,0 +1,20 @@
+docs/initiative-obsidian-integration.md
+  s_2a68252f8d3623::t_ba5e9e1f13a670 27
+  s_2a68252f8d3623::t_bfadb0a74bc8ea 26,28,35,221-222,424,452
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "4cb0111f8cac92e4cbf5cfb13e401d1d42efb78c",
+  "prompts": {},
+  "sessions": {
+    "s_2a68252f8d3623": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1a0447ec-1503-4b93-95f3-096dff792f2e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Victor Pierre Alves <victor.pierrealves@gain.pro>"
+    }
+  }
+}
