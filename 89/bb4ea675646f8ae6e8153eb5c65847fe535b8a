@@ -1,0 +1,31 @@
+tests/assets/fm-initiative-tests.py
+  s_fdd180bcf9eeb9::t_9cd9306f9f87af 852-853
+  s_fdd180bcf9eeb9::t_fccabbed769503 527-529,793-851,854-913
+bin/fm-merge-local.sh
+  s_fdd180bcf9eeb9::t_8e2e72df354343 79-80
+bin/fm-initiative.sh
+  s_fdd180bcf9eeb9::t_8e2e72df354343 21-22,24,26-32,36,54-57,89-92
+bin/fm-teardown.sh
+  s_fdd180bcf9eeb9::t_8e2e72df354343 345-346,348
+  s_fdd180bcf9eeb9::t_a795052d68fc29 347,3395-3396,3399-3400,3402
+docs/configuration.md
+  s_fdd180bcf9eeb9::t_a795052d68fc29 1224-1225,1227,1236,1238
+bin/fm-initiative.py
+  s_fdd180bcf9eeb9::t_37df2b64640b52 191-192,244,275,353-360,369-378,381-382,425-428,439,444-452,454,557,663,702-703,741
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "89bb4ea675646f8ae6e8153eb5c65847fe535b8a",
+  "prompts": {},
+  "sessions": {
+    "s_fdd180bcf9eeb9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6f46dc57-ad68-4d54-a09a-1a7686a66d96",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Victor Pierre Alves <victor.pierrealves@gain.pro>"
+    }
+  }
+}
