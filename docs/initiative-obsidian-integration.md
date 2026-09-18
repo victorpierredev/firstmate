@@ -25,14 +25,15 @@ It does not introduce another queue, scheduler, worker launcher, review pipeline
 It does not continue development of the `initiativeAI-cli` prototype as a user-facing CLI.
 Unlinked Firstmate work retains its current behavior.
 The integration leaves the contents and scripts of an existing legacy initiative folder untouched: it never writes, moves, or runs them.
-It does change how such a folder is reached: once the integrated launcher replaces the installed phase-driven skill, `/initiative <phase>` no longer runs the legacy workflow, and this design installs no replacement entry point for it.
+The standalone phase-driven workflow remains available outside Firstmate under `/initiative-legacy`; the new `/initiative` belongs only to the publishing Firstmate home.
+Its deployment owner preserves the legacy creation dependency under a non-shadowing name where needed.
 
 The following are future non-goals.
 This design specifies none of them, and each needs its own reviewed checkpoint before any work begins.
 
 - Migrating or adopting existing legacy initiative folders into the integrated model.
 - Executing initiative tasks through secondmates or other homes, including binding handoff and remote evidence routing.
-- Accepting or emulating the legacy phase-command syntax, keeping a separate creation command, or installing a second compatibility skill for legacy folders.
+- Accepting or emulating legacy phase-command syntax inside the integrated launcher, or migrating legacy folders automatically.
 
 ## Current behavior and sources
 
@@ -80,7 +81,7 @@ Three approaches were considered.
 | Approach | Benefit | Cost | Decision |
 | --- | --- | --- | --- |
 | Keep vault execution boards and synchronize both systems | Small initial change to the old workflow | Competing status and decision owners, ambiguous recovery, operational noise in the vault | Reject |
-| Use Firstmate records with one initiative note and a narrow publisher | Reuses guarded execution and keeps the human story self-contained | Requires explicit bindings, landing evidence, and a proven conditional writer | Recommend |
+| Use Firstmate records with one initiative note and a narrow publisher | Reuses guarded execution and keeps the human story self-contained | Requires explicit bindings, landing evidence, and separate generated state | Recommend |
 | Build on the prototype as the orchestration service | Reuses a CLI surface | Adds a second execution authority and contradicts the requested retirement direction | Reject |
 
 Ownership is divided by meaning, not by which agent last touched a file.
@@ -170,7 +171,7 @@ The publisher generates its entire machine-owned companion and parses no human t
 Escaped pipes, inline code, fenced examples, Unicode, frontmatter, line endings, and every other byte of the human note remain unchanged because the integration only reads it.
 
 Keep durable linkage under the configured Firstmate data root, provisionally `data/initiatives/<initiative-id>/record.json`.
-The future initiative helper's header and help will own its exact versioned wire format.
+The [initiative helper's header and help](../bin/fm-initiative.sh) own its exact versioned wire format.
 Required semantic fields are:
 
 - Schema version, initiative ID, title, selected vault/work roots, and registered relative note path.
@@ -218,14 +219,14 @@ If all remaining work is blocked, explain the material blocker and next decision
 If the design is inadequate, arrange the bounded investigation or clarification needed before briefing implementation.
 
 The launcher resolves intent, not a phase argument, and defines no phase vocabulary.
-An initiative folder without a Firstmate binding is not managed by this launcher: leave its contents untouched and say plainly that the launcher neither runs nor migrates it.
+An initiative folder without a Firstmate binding is not managed by this launcher: leave its contents untouched and direct intentional legacy work to the separately deployed `/initiative-legacy` entry point.
 That answer depends only on the target being an unbound legacy folder, never on the words of the request.
 Former phase words carry no compatibility meaning: aimed at a bound initiative they are ordinary language for intent resolution, and otherwise they receive the same clarification as any other unresolved request.
 Unknown arguments produce a short contextual clarification, not a mandatory phase tutorial.
 
-The tracked Initiative entry-point source must have one owner when implemented, with installation into global skill directories treated as deployment.
-Before changing that source, identify its actual installation owner so a later synchronization cannot restore the old launcher over the new one.
-Firstmate-specific operating detail belongs in a conditional internal skill and helper headers, with only the necessary trigger pointer added to the supervisor contract in a later implementation change.
+The integrated entry point is owned by [the internal Initiative skill](../.agents/skills/initiative/SKILL.md) and reaches homes through Firstmate's existing update path, without a global installer.
+The external personal-skill source and its synchronization owner retain the renamed legacy workflow; deployment must update that source before removing shadowing installed copies.
+The internal skill owns operating decisions, helper headers own mechanics, and the supervisor contract carries only the load trigger.
 
 ### Private operating guide
 
@@ -235,6 +236,7 @@ The guide directs users to work through Firstmate from that home; project reposi
 Its directory and startup instructions must agree with the installation's actual home configuration and supported harness setup, whose shared contract remains in [configuration](configuration.md).
 Distinguish currently installed behavior from the proposed integration so a target workflow is never presented as available before deployment.
 The deployment owner maintains this guide whenever the working-directory setup or installed entry-point behavior changes and verifies it with a fresh-session walkthrough.
+The guide distinguishes internal `/initiative` from standalone `/initiative-legacy`, names any renamed legacy creation command, and verifies both inside and outside the Firstmate home.
 Keep actual local paths and installation-specific commands in that private guide, never in the upstream specification or an initiative's task table.
 
 ## Lifecycle projection
@@ -304,6 +306,7 @@ Failure to persist even the obligation refuses cleanup before destructive remova
 Use one deterministic record and publication helper.
 Configure a dedicated generated root inside the selected vault, disjoint from the human work and archive roots.
 The generated companion is ordinary Markdown that Obsidian can read without a plugin, Dataview, or a running custom server.
+New companions present a stable human-readable initiative title when opened directly or embedded; the immutable UUID remains the private identity.
 A visible header identifies it as generated and directs human edits to the human initiative note.
 It leads with the plain-language goal and current state, then completed work, the next useful action, genuine blockers or decisions, the four-column table, and stable human-relevant links.
 It is concise, skimmable, deterministic, and understandable without Firstmate internals.
@@ -420,7 +423,7 @@ Failure of authority, path validation, or owner identity refuses mutation withou
 7. Every human-note byte survives every helper operation, concurrent editor save, publication, recovery, and archive reconciliation.
 8. Crashes around registration, dispatch, landing evidence, generated publication, and cleanup lose neither linkage nor evidence.
 9. Completed rows survive metadata removal, Done-history pruning, and validated human note moves.
-10. Unlinked Firstmate work is unchanged; unbound legacy folders remain untouched and unsupported regardless of former phase words.
+10. Unlinked Firstmate work is unchanged; unbound legacy folders remain untouched by the integrated launcher and use the separate `/initiative-legacy` workflow after deployment.
 11. Wrong-home input, traversal, unsafe links, identity duplication, or untrusted ticket text cannot select a write path or authorize execution.
 12. Completion verifies human criteria and outstanding-call disposition as well as landed tasks; archive never overwrites or moves a human file.
 13. The installation's private guide accurately names its canonical Firstmate home and installed behavior, with a fresh-session walkthrough after deployment.
@@ -438,5 +441,5 @@ Shared lifecycle seams cover all supported harnesses and runtime backends; add l
 
 Deliver in order: record and publication boundary; authoritative lifecycle integration; conversational entry and installation ownership; then guarded deployment and an approved new initiative pilot.
 The pilot verifies automatic landed status and a session restart, and refreshes the private operating guide.
-Global skill installation and real-vault deployment occur through their explicit deployment owner, not by editing an installed copy from an implementation worktree.
+Legacy skill renaming and real-vault deployment occur through their explicit deployment owner, preserving existing source history and verifying fresh sessions inside and outside Firstmate rather than editing installed copies from an implementation worktree.
 The helper header owns exact commands and record formats; configuration documentation owns home settings; the internal skill owns operating decisions.

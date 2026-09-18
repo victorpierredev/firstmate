@@ -1195,7 +1195,7 @@ The shared staleness proof lives in `bin/fm-lock-lib.sh`, which both `fm-teardow
 ## Initiative and Obsidian
 
 Initiative tracking is opt-in per Firstmate home.
-The helper and lifecycle projection are implemented; conversational skill deployment remains a separate delivery step.
+The helper, lifecycle projection, and [internal conversational skill](../.agents/skills/initiative/SKILL.md) ship with Firstmate; external legacy-skill renaming and real-vault deployment remain separate delivery steps.
 The [integration blueprint](initiative-obsidian-integration.md) defines the read-only human-note boundary and generated companion.
 `bin/fm-initiative.sh --help` owns exact commands, request fields, and record formats.
 
@@ -1219,8 +1219,9 @@ For example, from the publishing home with `FM_HOME` explicitly set, pass this J
 
 The helper's `draft` command returns starter Markdown for the human to create in their editor.
 Registration reads its stable identity marker; it never creates, edits, moves, or replaces the human note.
-Generated companions live at `<generated>/<initiative-uuid>.md` and can be opened directly in Obsidian.
-The human may add an embed such as `![[Firstmate status/<initiative-uuid>]]` to their plan; the integration does not insert it.
+New generated companions use a stable readable filename such as `<generated>/Salesforce - Status.md`; the record retains that name independently of the private initiative UUID.
+The human may add an embed such as `![[Firstmate status/Salesforce - Status]]` to their plan; the integration does not insert it.
+Registration refuses a filename collision and requests a distinct title, while earlier private records retain their existing paths rather than silently breaking links.
 An offline vault retains private facts and pending publication, and normal main wake acknowledgement or deferred startup retries reconciliation.
 A changed generated companion needs explicit recovery; its previous content remains private evidence.
 The generated namespace is reserved for Firstmate, and is not a human-authoring surface or an editor compare-and-swap service.
@@ -1228,5 +1229,6 @@ The generated namespace is reserved for Firstmate, and is not a human-authoring 
 GitHub final-object verification uses authenticated `gh-axi` reads, exact accepted row coverage, the merged pull request's integration target and resulting commit, and ancestry verification against that target.
 GitLab final-object enrichment is not qualified in this implementation; linked GitLab deliveries retain a visible private obligation and withhold Done and the commit until proof is available.
 Unlinked GitLab work retains its current behavior.
-Local-only receipts are captured by the existing approved fast-forward owner while its control lock is held.
+The existing approved fast-forward owner retains the pinned local result before updating Git, then confirms its receipt while its control lock is held.
 A merge with failed evidence retention is reported as landed with pending evidence, never retried as another merge.
+No-mistakes delivery proof is collected through the existing execution-state owner before cleanup locks, then checked against the task generation and code before cleanup can proceed.

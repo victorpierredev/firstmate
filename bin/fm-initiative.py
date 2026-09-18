@@ -86,13 +86,35 @@ def read(path, missing=False):
         if missing: return None
         raise
 
-def put(path, content, exclusive=False):
+def recover_exclusive(path, transaction):
+    """Retire only the journaled staging name, never an unexplained hardlink."""
+    if not transaction: return
+    name=transaction['staging']
+    check(re.fullmatch(r'\.initiative-[0-9a-f-]{36}',name),'invalid publication staging name')
+    check(digest(transaction['content'])==transaction['digest'],'invalid publication candidate digest')
+    with directory(Path(path).parent) as d:
+        try: fd=os.open(name,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK,dir_fd=d)
+        except FileNotFoundError: return
+        with os.fdopen(fd,'rb') as f:
+            staged=os.fstat(f.fileno())
+            check(stat.S_ISREG(staged.st_mode) and staged.st_nlink in (1,2),'unsafe publication staging file')
+            check(digest(f.read(8*1024*1024+1))==transaction['digest'],'publication staging content changed')
+        if staged.st_nlink==2:
+            target=os.stat(Path(path).name,dir_fd=d,follow_symlinks=False)
+            check(stat.S_ISREG(target.st_mode) and target.st_nlink==2 and (target.st_dev,target.st_ino)==(staged.st_dev,staged.st_ino),'publication staging link differs from its destination')
+        os.unlink(name,dir_fd=d)
+        os.fsync(d)
+
+def transaction(content, original=None):
+    return {'content':content.decode(),'digest':digest(content),'original':original,'staging':'.initiative-'+str(uuid.uuid4())}
+
+def put(path, content, exclusive=False, staging=None):
     path=Path(path)
     with directory(path.parent,True) as d:
         prior=read(path,True)
         check(not exclusive or prior is None,'destination exists: '+str(path))
         if prior==content: return
-        name='.initiative-'+str(uuid.uuid4())
+        name=staging or '.initiative-'+str(uuid.uuid4())
         fd=os.open(name,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600,dir_fd=d)
         try:
             with os.fdopen(fd,'wb') as f:
@@ -218,7 +240,7 @@ def rendered(r):
         elif blocked: next_action='Resolve the decision or dependency that is holding up the work.'
         elif not r['completed']: next_action='Check the completion criteria and remaining decisions.'
         else: next_action='No further implementation is planned.'
-    out=[f'# {escape(r["title"])}','', '## Goal','',escape(r['goal']),'',
+    out=[f'# {escape(r["title"])}','', '> This status note is generated. Make changes in the initiative plan.','', '## Goal','',escape(r['goal']),'',
          '## Current state','',state]
     if r.get('position'): out+=['',r['position']]
     out+=['','## Completed work','']
@@ -242,7 +264,6 @@ def rendered(r):
     c=config(); link=quote(os.path.relpath(r['note'],c['generated']),safe='/')
     out+=['','## Links','',f'- [Initiative plan]({link})']
     if r.get('source'): out+=['- [Source ticket]('+r['source']+')']
-    out+=['','> This status note is generated. Make changes in the initiative plan.']
     return ('\n'.join(out)+'\n').encode()
 
 def generated_owner(c):
@@ -251,24 +272,38 @@ def generated_owner(c):
     check(owner=={'publisher':c['publisher'],'home':str(HOME)},'generated root belongs to another publisher')
     return root
 
+def companion(c,r):
+    # Earlier private records keep their registered UUID path until explicitly
+    # migrated; a display-name change must never silently break existing links.
+    name=r.get('companion',r['id']+'.md')
+    check(len(relative(name).parts)==1 and name.endswith('.md'),'invalid companion filename')
+    return generated_owner(c)/name
+
 def publish(c,r):
     try:
         human(c,r)
-        root=generated_owner(c); path=root/(r['id']+'.md')
-        candidate=rendered(r); current=read(path,True)
+        path=companion(c,r)
+        candidate=rendered(r)
         pending=r.get('pending_publication')
+        if pending and pending.get('staging'): recover_exclusive(path,pending)
+        current=read(path,True)
         if pending and current is not None and digest(current)==pending['digest']:
-            r['published']=pending['digest']; r['pending_publication']=None
+            r['published']=pending['digest']; r['published_content']=pending['content']; r['pending_publication']=None
         baseline=r.get('published')
         if current is not None and digest(current) not in (baseline,digest(candidate)):
             r.setdefault('conflicts',{})[digest(current)]=current.decode('utf-8',errors='replace')
             raise Refusal('generated companion changed; explicit recovery required')
         if current!=candidate:
-            r['pending_publication']={'content':candidate.decode(),'digest':digest(candidate)}
+            r['pending_publication']=transaction(candidate,r.get('published_content'))
             save(r)
-            put(path,candidate,exclusive=current is None)
+            put(path,candidate,exclusive=current is None,staging=r['pending_publication']['staging'])
             check(read(path)==candidate,'generated publication readback failed')
-        r['published']=digest(candidate); r['pending_publication']=None; r['publication_error']=''
+        r['published']=digest(candidate); r['published_content']=candidate.decode(); r['pending_publication']=None; r['publication_error']=''
+        if r.get('recovery_pending'):
+            history=r.setdefault('publication_history',[])
+            history.append(r.pop('recovery_pending'))
+            while len(history)>8 or len(encode(history))>256*1024: history.pop(0)
+            r['conflicts']={}
     except (OSError,Refusal,ValueError) as e:
         r['publication_error']=str(e)
     save(r)
@@ -309,14 +344,46 @@ def git_contains(repo,commit,target):
     command(['git','-C',repo,'cat-file','-e',commit+'^{commit}'])
     command(['git','-C',repo,'merge-base','--is-ancestor',commit,'refs/heads/'+target])
 
+def recover_local(row,m=None):
+    intent=row.get('local_intent')
+    if not intent: return row.get('landing')
+    check(intent['scope']==row['scope_revision'],'local intent belongs to a different scope')
+    if m: check(intent['generation']==m['spawn_gen'],'local intent belongs to a different generation')
+    git_contains(row['repo'],intent['commit'],row['target'])
+    git_contains(row['repo'],intent['before'],row['target'])
+    return {**intent,'provenance':'fm-merge-local'}
+
+def remember_landing(row,landing):
+    if landing not in row['landing_history']: row['landing_history'].append(copy.deepcopy(landing))
+    row.update(landing=landing,obligation=None,local_intent=None)
+
+def verified_delivery(row,m,current):
+    check(re.match(r'^state: done .*source: run-step(?:\s|$)',current),'selected no-mistakes delivery has not been verified')
+    return {'generation':m['spawn_gen'],'scope':row['scope_revision'],'observation':current,'head':command(['git','-C',m['worktree'],'rev-parse','HEAD'])}
+
 def capture(c,q):
     task=token(q['task']); event=q['event']
-    check(event in ('spawn','merge','local','teardown'),'unknown lifecycle event')
+    check(event in ('spawn','merge','local-intent','local','local-retry','delivery','teardown'),'unknown lifecycle event')
+    observed_meta=None; observed_head=None; current=None; landed=False
+    # Read the execution owner before the initiative lock and, at the caller,
+    # before cleanup takes any destructive-operation locks.
+    if event=='delivery' and bindings(task):
+        observed_meta=metadata(task)
+        if observed_meta and observed_meta.get('mode')=='no-mistakes':
+            observed_head=command(['git','-C',observed_meta['worktree'],'rev-parse','HEAD'])
+            current=source('task',task)['current']
     with locked():
         for r,rid in bindings(task):
             row=r['rows'][rid]; m=metadata(task)
             check(m is not None,'task metadata required before evidence capture')
             proposed=attempt_for(row,m)
+            if event=='delivery':
+                check(m==observed_meta,'task generation changed during delivery observation')
+                if m.get('mode')=='no-mistakes' and not row.get('landing'):
+                    proof=verified_delivery(row,m,current)
+                    check(proof['head']==observed_head,'task code changed during delivery observation')
+                    row['delivery_verified']=proof
+                save(r); continue
             if event=='spawn':
                 check(m['spawn_gen'] not in row.get('retired_generations',[]),'reopened scope requires a new dispatch generation')
                 if row.get('attempt')!=proposed:
@@ -333,16 +400,39 @@ def capture(c,q):
                     identity=source('pr',q['pr'])
                     check(not m.get('pr') or m['pr']==identity['url'],'stale PR identity for this attempt')
                     if not row.get('landing'): row['obligation']['pr']=identity['url']
-                if event=='local':
+                if event=='local-retry':
+                    if row.get('landing'): git_contains(row['repo'],row['landing']['commit'],row['target'])
+                    if row.get('local_intent'):
+                        check(row['local_intent']['generation']==m['spawn_gen'],'local intent belongs to a different generation')
+                        try: remember_landing(row,recover_local(row,m))
+                        except Refusal: pass
+                    landed=bool(row.get('landing'))
+                if event in ('local-intent','local'):
                     check(m.get('mode')=='local-only' and q['target']==row['target'],'wrong local landing mode or target')
                     git_contains(row['repo'],q['before'],row['target'])
-                    git_contains(row['repo'],q['after'],row['target'])
-                    check(command(['git','-C',row['repo'],'rev-parse','refs/heads/'+row['target']])==q['after'],'local receipt must be captured at the exact serialized target update')
-                    row['landing']={'commit':q['after'],'before':q['before'],'repo':row['repo'],'target':row['target'],'scope':row['scope_revision'],'provenance':'fm-merge-local','generation':m['spawn_gen']}
-                    row['landing_history'].append(copy.deepcopy(row['landing']))
-                    row['obligation']=None
+                    check(SHA.fullmatch(q['after']),'full commit ID required')
+                    command(['git','-C',row['repo'],'merge-base','--is-ancestor',q['before'],q['after']])
+                    expected=q['before'] if event=='local-intent' else q['after']
+                    check(command(['git','-C',row['repo'],'rev-parse','refs/heads/'+row['target']])==expected,'local receipt must be captured at the exact serialized target update')
+                    receipt={'commit':q['after'],'before':q['before'],'repo':row['repo'],'target':row['target'],'scope':row['scope_revision'],'generation':m['spawn_gen']}
+                    if event=='local-intent':
+                        check(q['before']!=q['after'],'no new local integration result to record')
+                        check(not row.get('local_intent') or row['local_intent']==receipt,'a different local landing intent requires reconciliation')
+                        row['local_intent']=receipt
+                    else:
+                        check(not row.get('local_intent') or row['local_intent']==receipt,'local receipt differs from its durable intent')
+                        remember_landing(row,{**receipt,'provenance':'fm-merge-local'})
+                if event=='teardown' and not row.get('landing'):
+                    if m.get('mode')=='local-only':
+                        receipt=recover_local(row,m)
+                        check(receipt is not None,'local landing evidence is missing; retain task before cleanup')
+                        remember_landing(row,receipt)
+                    if m.get('mode')=='no-mistakes':
+                        proof=row.get('delivery_verified') or {}
+                        check(proof.get('generation')==m['spawn_gen'] and proof.get('scope')==row['scope_revision'],'verified delivery evidence is missing; retain task before cleanup')
+                        check(proof.get('head')==command(['git','-C',m['worktree'],'rev-parse','HEAD']),'task code changed after delivery verification; retain task before cleanup')
             save(r)
-    return {'captured':task,'event':event}
+    return {'captured':task,'event':event,'landed':landed}
 
 def github(path):
     # gh-axi renders ordinary JSON as TOON. Base64 is an explicit lossless body
@@ -401,6 +491,9 @@ def observe(row, allow_landing=True):
         if not landing_still_present(row):
             return {'status':'Blocked','freshness':'accepted landing was removed from the integration history; scope reconciliation required'}
         return {'status':'Done','freshness':'','obligation':None}
+    if row.get('local_intent') and allow_landing:
+        landing=recover_local(row,metadata(row['task']))
+        return {'status':'Done','freshness':'','landing':landing,'landing_history':row['landing_history']+[landing],'local_intent':None,'obligation':None}
     attempt=row.get('attempt') or {}
     can_verify=attempt.get('metadata',{}).get('mode')!='no-mistakes' or row.get('delivery_verified')
     if allow_landing and row.get('coverage') and attempt and can_verify:
@@ -408,6 +501,7 @@ def observe(row, allow_landing=True):
         if landing:
             return {'status':'Done','freshness':'','landing':landing,'landing_history':row['landing_history']+[landing],'obligation':None}
     before_meta=metadata(row['task'])
+    before_head=command(['git','-C',before_meta['worktree'],'rev-parse','HEAD']) if before_meta and before_meta.get('mode')=='no-mistakes' else None
     o=source('task',row['task'])
     check(o['result']=='found','work item unavailable; retaining last verified status')
     parts=o['state'].split()
@@ -427,7 +521,8 @@ def observe(row, allow_landing=True):
             check(state=='in_flight','replacement attempt has not committed dispatch')
     current=o['current']
     if m and re.match(r'^state: done .*source: run-step',current):
-        result['delivery_verified']={'generation':m['spawn_gen'],'scope':row['scope_revision']}
+        result['delivery_verified']=verified_delivery(row,m,current)
+        check(before_head is None or result['delivery_verified']['head']==before_head,'task code changed during delivery observation')
     prevents=held=='yes' or blocked=='yes' or state=='held' or bool(re.match(r'^state: (blocked|paused|failed)\b',current))
     result['status']='Blocked' if prevents else ('In progress' if row['started'] or state=='in_flight' else 'Planned')
     if allow_landing and result.get('delivery_verified') and row.get('coverage'):
@@ -476,15 +571,22 @@ def configure(q):
         prior=read(CONFIG/'initiative.json',True)
         if prior:
             old=json.loads(prior); c['publisher']=old['publisher']
+            pending=old.pop('owner_pending',None)
             check(old==c,'reconfiguration requires explicit migration of existing bindings')
+            if pending: c['owner_pending']=pending
         root=vault/roots['generated']; owner=root/'.firstmate-owner.json'
         ownership=encode({'publisher':c['publisher'],'home':str(HOME)})
+        if c.get('owner_pending'):
+            check(c['owner_pending']['content']==ownership.decode(),'wrong owner receipt candidate')
+            recover_exclusive(owner,c['owner_pending'])
         existing=read(owner,True)
         if existing: check(existing==ownership,'generated directory already owned')
         else:
             check(not list(root.iterdir()),'generated directory must be empty at opt-in')
+            c['owner_pending']=transaction(ownership)
             put(CONFIG/'initiative.json',encode(c))
-            put(owner,ownership,True)
+            put(owner,ownership,True,staging=c['owner_pending']['staging'])
+        c.pop('owner_pending',None)
         put(CONFIG/'initiative.json',encode(c))
     return c
 
@@ -498,6 +600,10 @@ def main(action,q):
     if action=='verify-provider':
         row={'repo':str(Path(q['repo']).resolve(strict=True)),'target':q['target'],'scope_revision':'capability-check','coverage':{'pr':q['pr'],'scope':'capability-check'},'attempt':{'scope':'capability-check','generation':'capability-check','metadata':{'mode':'direct-PR'}}}
         return forge_landing(row)
+    if action=='list':
+        if read(CONFIG/'initiative.json',True) is None: return {'configured':False,'initiatives':[]}
+        config()
+        return {'configured':True,'initiatives':[{k:r[k] for k in ('id','title','source')} | {'state':'archived' if r['archived'] else 'completed' if r['completed'] else 'active'} for r in records()]}
     c=config()
     if action=='capture': return capture(c,q)
     if action=='reconcile': return reconcile(c,q.get('id'))
@@ -530,7 +636,13 @@ def main(action,q):
                 if existing['id']==identity or (src and src==existing.get('source')):
                     check(existing['id']==identity and existing['note']==note,'source or identity already registered; continue that initiative')
                     human(c,existing); return existing
+            title=text(q['title'])
+            stem=' '.join(re.sub(r'[\\/:*?"<>|#^\[\]]',' ',title).split()).strip('. ')[:120].rstrip('. ')
+            check(stem,'initiative title needs a readable filename')
+            name=stem+' - Status.md'
+            check(not any(p.name.casefold()==name.casefold() for p in generated_owner(c).iterdir()) and not any(r.get('companion','').casefold()==name.casefold() for r in records()),'companion name already reserved; use a distinct initiative title')
             r={'version':1,'home':str(HOME),'id':identity,'title':text(q['title']),'goal':text(q['goal']),'note':note,'source':src,'revision':0,'rows':{},'accepted':None,'design_history':[],'design_pending':False,'published':None,'pending_publication':None,'publication_error':'','completed':False,'archived':False}
+            r['companion']=name
             human(c,r); save(r)
         else:
             r=load(uid(q['id'])); authority=text(q.get('authority',''))
@@ -583,8 +695,12 @@ def main(action,q):
                 check(PurePosixPath(r['note']).is_relative_to(c['archive']),'move the human note into the archive in your editor first')
                 r['archived']={'authority':authority}
             elif action=='recover':
-                root=generated_owner(c); current=read(root/(r['id']+'.md'),True)
+                path=companion(c,r)
+                pending=r.get('pending_publication')
+                if pending and pending.get('staging'): recover_exclusive(path,pending)
+                current=read(path,True)
                 if current is not None: r.setdefault('conflicts',{})[digest(current)]=current.decode('utf-8',errors='replace')
+                r['recovery_pending']={'authority':authority,'original':r.get('published_content'),'candidate':pending,'conflicts':copy.deepcopy(r.get('conflicts',{}))}
                 r['published']=digest(current) if current is not None else None
                 r['recovery_authority']=authority
             else: raise Refusal('unknown initiative command')
@@ -601,7 +717,7 @@ if __name__=='__main__':
             else:
                 action='capture'; q['event']=sys.argv[3]
                 if q['event']=='merge': q['pr']=sys.argv[4]
-                if q['event']=='local': q.update(before=sys.argv[4],after=sys.argv[5],target=sys.argv[6])
+                if q['event'] in ('local-intent','local'): q.update(before=sys.argv[4],after=sys.argv[5],target=sys.argv[6])
         else:
             q=json.loads(sys.stdin.read() if len(sys.argv)>2 and sys.argv[2]=='-' else Path(sys.argv[2]).read_text()) if len(sys.argv)>2 else {}
         check(isinstance(q,dict),'JSON request object required')

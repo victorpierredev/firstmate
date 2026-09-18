@@ -338,6 +338,12 @@ fi
 fm_lease_guard "$ID" "teardown (fm-teardown)"
 
 META="$STATE/$ID.meta"
+# Preserve attributed delivery proof while its worktree is still available and
+# before any cleanup lock. The later local capture rechecks task incarnation.
+if [ -e "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/initiative.json" ] || [ -L "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/initiative.json" ]; then
+  FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_DATA_OVERRIDE="$DATA" \
+    "$SCRIPT_DIR/fm-initiative.sh" capture-task "$ID" delivery >/dev/null || exit 1
+fi
 TREEHOUSE_PROJECT_LOCK=
 TREEHOUSE_PROJECT_LOCK_HELD=0
 TREEHOUSE_SLOT_LOCK_REQUIRED=0

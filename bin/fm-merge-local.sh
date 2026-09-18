@@ -73,6 +73,15 @@ fi
 PROJ=$(grep '^project=' "$META" | cut -d= -f2-)
 MODE=$(grep '^mode=' "$META" | cut -d= -f2- || true)
 [ "$MODE" = local-only ] || { echo "error: task $ID is mode=$MODE, not local-only; merge PR tasks with bin/fm-pr-merge.sh <id> <PR url> after approval" >&2; exit 1; }
+INITIATIVE_CONFIGURED=0
+if [ -e "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/initiative.json" ] || [ -L "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/initiative.json" ]; then
+  INITIATIVE_CONFIGURED=1
+  recovery=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-initiative.sh" capture-task "$ID" local-retry) || exit 1
+  if printf '%s\n' "$recovery" | jq -e '.landed == true' >/dev/null; then
+    echo "local landing evidence recovered for $ID; no merge repeated"
+    exit 0
+  fi
+fi
 
 default_branch() {
   local ref branch
@@ -131,13 +140,17 @@ merge_status=0
 # Pin the delivered object so a later branch or target advance cannot become
 # the initiative receipt for this operation.
 expected_after=$(git -C "$PROJ" rev-parse "$BRANCH")
+if [ "$INITIATIVE_CONFIGURED" = 1 ]; then
+  FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
+    "$SCRIPT_DIR/fm-initiative.sh" capture-task "$ID" local-intent "$before_full" "$expected_after" "$DEFAULT" >/dev/null || exit 1
+fi
 git -C "$PROJ" merge --ff-only "$expected_after" >/dev/null || merge_status=$?
 [ "$merge_status" -eq 0 ] || exit "$merge_status"
 after=$(git -C "$PROJ" rev-parse --short "$DEFAULT")
 after_full=$expected_after
 # The exact result is captured while the approved fast-forward is serialized.
 # A receipt failure does not undo the merge or authorize another merge attempt.
-if { [ -e "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/initiative.json" ] || [ -L "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/initiative.json" ]; } &&
+if [ "$INITIATIVE_CONFIGURED" = 1 ] &&
     ! FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
       "$SCRIPT_DIR/fm-initiative.sh" capture-task "$ID" local "$before_full" "$after_full" "$DEFAULT" >/dev/null; then
   echo "error: local merge landed at $after_full, but initiative evidence remains pending; retain the task for reconciliation" >&2

@@ -15,10 +15,15 @@
 #   cover: id, row, pr, authority                explicit delivery coverage
 #   complete: id, criteria, disposition, authority
 #   archive: id, authority                       validate a HUMAN-performed move
+#   list: {} -> configured, initiatives[{id,title,source,state}]
+#     state is active, completed, or archived; unconfigured homes return []
 #   show: id; resolve: [query]; brief: id, row; reconcile: [id]
 #   dispatch-check: task                        verify approved source/scope
-#   capture: task, event (spawn|merge|local|teardown)
-#     merge also takes pr; local takes before, after, target (full object IDs)
+#   capture: task, event (spawn|merge|local-intent|local|local-retry|delivery|teardown)
+#     merge takes pr; local-intent/local take before, after, target (full IDs)
+#     local-intent durably pins the approved update before Git runs; local-retry
+#     verifies it without merging and returns landed; delivery retains the
+#     execution owner's no-mistakes proof before cleanup acquires its locks
 #   recover: id, authority                      accept regenerated companion
 #   verify-provider: pr, repo, target             read-only capability check
 # Internal lifecycle callers may use:
@@ -31,11 +36,18 @@
 # data/initiatives/<UUID>/record.json v1 owns immutable initiative/row UUIDs,
 # accepted text snapshots and provenance, exact work-item/repository/target/scope
 # bindings, generation-bound attempts, landing history/obligations, publication
-# baseline/pending candidate/conflicts and revision. No dependency graph is copied.
+# baseline bytes/pending candidate/staging name/conflicts and revision.
+# Explicitly resolved publication history retains at most 8 entries/256 KiB;
+# unresolved evidence is never pruned. No dependency graph is copied.
 # The human note is READ ONLY for ALL operations, including registration/archive.
-# Only <generated>/<UUID>.md is published, for ordinary Obsidian reading/embedding.
-# No network or vault access occurs in capture; teardown fails if local evidence
-# cannot be retained. Reconcile collects owner observations outside the record
+# New records reserve a readable companion basename (<title> - Status.md), reject
+# case-insensitive collisions, and retain that name independently of identity.
+# Earlier records without that field retain their UUID path, never silently moved.
+# Only the registered generated companion is published for reading/embedding.
+# Only delivery capture reads the execution owner (outside cleanup/record locks);
+# other captures use local evidence and never access the vault or forge.
+# Teardown refuses missing delivery/local landing evidence.
+# Reconcile collects owner observations outside the record
 # lock, then refuses stale observations. Same-home writers serialize with flock.
 # Hooks are inert without configuration. No new worker, daemon, or merge authority.
 # Exit 2 refuses invalid/unsafe input; publication failures remain in the record
@@ -58,7 +70,7 @@ case "$1" in
     ;;
 esac
 case "$1" in
-  show|resolve|brief|draft|verify-provider) ;;
+  list|show|resolve|brief|draft|verify-provider) ;;
   *)
     # shellcheck source=bin/fm-gate-refuse-lib.sh
     . "$SCRIPT_DIR/fm-gate-refuse-lib.sh"

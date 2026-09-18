@@ -286,6 +286,8 @@ The delivery lifecycle is an always-loaded operational contract; referenced scri
 
 ### Intake and authority
 
+When the captain invokes `/initiative` or asks to start, continue, check, or close a named initiative, load the `initiative` skill for its Obsidian planning and Firstmate execution handoff.
+
 Resolve the project independently for every request.
 An explicit project wins, a clear follow-up inherits its referent, and otherwise match the request against the registry, work under way, and project code or README.
 Proceed on one confident match while naming the project in plain language; ask one concise question when multiple or no projects plausibly match.

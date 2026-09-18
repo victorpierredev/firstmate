@@ -225,6 +225,10 @@
       "audience": "agent-runtime"
     },
     {
+      "path": ".agents/skills/initiative/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
       "path": ".agents/skills/process-event-sources/SKILL.md",
       "audience": "agent-runtime"
     },
@@ -462,6 +466,10 @@
     },
     {
       "path": "docs/verification/muse.md",
+      "audience": "maintainer-verification"
+    },
+    {
+      "path": "docs/verification/initiative-obsidian.md",
       "audience": "maintainer-verification"
     },
     {

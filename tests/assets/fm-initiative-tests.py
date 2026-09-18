@@ -86,13 +86,179 @@ else: sys.exit(2)
     def record(self):
         return self.call('show',dict(id=self.iid))
 
+    def generated(self):
+        return self.vault/'Generated'/self.record()['companion']
+
+    def crash(self, action, request, boundary):
+        injection=self.root/'injection'; injection.mkdir(exist_ok=True)
+        (injection/'sitecustomize.py').write_text('''import json,os
+boundary=os.environ.get('INITIATIVE_CRASH')
+link,replace=os.link,os.replace
+def interrupted_link(src,dst,*args,**kwargs):
+ result=link(src,dst,*args,**kwargs)
+ if (boundary=='linked' and str(dst).endswith('.md')) or (boundary=='owner' and dst=='.firstmate-owner.json'): os._exit(91)
+ return result
+def interrupted_replace(src,dst,*args,**kwargs):
+ record=None
+ if dst=='record.json':
+  fd=os.open(src,os.O_RDONLY,dir_fd=kwargs.get('src_dir_fd'))
+  with os.fdopen(fd) as f: record=json.load(f)
+ if boundary=='ack' and record and record.get('published') and not record.get('pending_publication'): os._exit(91)
+ result=replace(src,dst,*args,**kwargs)
+ if boundary=='pending' and record and record.get('pending_publication'): os._exit(91)
+ if boundary=='published' and str(dst).endswith('.md'): os._exit(91)
+ return result
+os.link,os.replace=interrupted_link,interrupted_replace
+''')
+        result=self.call(action,request,False,dict(self.env,PYTHONPATH=str(injection),INITIATIVE_CRASH=boundary))
+        self.assertEqual(result.returncode,91,result.stdout+result.stderr)
+
+    def test_initial_publication_link_crash_recovers_owned_temp_only(self):
+        self.configure()
+        self.crash('register',dict(title='Example',goal='Preserve human notes.',note='Work/Example.md'),'linked')
+        generated=self.generated()
+        self.assertEqual(generated.stat().st_nlink,2)
+        self.call('reconcile')
+        self.assertFalse(self.record()['publication_error'])
+        self.assertIsNone(self.record()['pending_publication'])
+        self.assertEqual(generated.stat().st_nlink,1)
+        self.assertEqual(list(generated.parent.glob('.initiative-*')),[])
+        os.link(generated,self.root/'unowned-alias')
+        self.call('reconcile')
+        self.assertTrue(self.record()['publication_error'])
+        self.call('recover',dict(id=self.iid,authority='retry'),False)
+        self.assertEqual(self.note.read_bytes(),self.original)
+
+    def test_owner_receipt_link_crash_is_restartable(self):
+        q=dict(vault=str(self.vault),work='Work',archive='Archive',generated='Generated')
+        self.crash('configure',q,'owner')
+        owner=self.vault/'Generated/.firstmate-owner.json'
+        self.assertEqual(owner.stat().st_nlink,2)
+        self.call('configure',q)
+        self.assertEqual(owner.stat().st_nlink,1)
+        self.assertEqual(list(owner.parent.glob('.initiative-*')),[])
+        os.link(owner,self.root/'foreign-alias')
+        self.call('configure',q,False)
+        self.assertEqual(self.note.read_bytes(),self.original)
+
+    def test_publication_crashes_retry_and_acknowledge_without_rewrite(self):
+        self.register(); generated=self.generated()
+        for boundary in ('pending','published','ack'):
+            with self.subTest(boundary=boundary):
+                previous=generated.read_bytes()
+                self.crash('position',dict(id=self.iid,text='Approved update '+boundary,authority='accepted'),boundary)
+                interrupted=generated.read_bytes(); modified=generated.stat().st_mtime_ns
+                self.call('reconcile')
+                if boundary=='pending': self.assertNotEqual(generated.read_bytes(),previous)
+                else:
+                    self.assertEqual(generated.read_bytes(),interrupted)
+                    self.assertEqual(generated.stat().st_mtime_ns,modified)
+                stable=generated.stat().st_mtime_ns
+                self.call('reconcile')
+                self.assertEqual(generated.stat().st_mtime_ns,stable)
+                self.assertIsNone(self.record()['pending_publication'])
+                self.assertEqual(self.note.read_bytes(),self.original)
+
+    def test_pending_conflict_preserves_original_candidate_and_current(self):
+        self.register(); generated=self.generated(); original=generated.read_text()
+        self.crash('position',dict(id=self.iid,text='Approved candidate',authority='accepted'),'pending')
+        candidate=self.record()['pending_publication']['content']
+        changed=original+'External words\n'; generated.write_text(changed)
+        self.call('reconcile'); r=self.record()
+        self.assertEqual(r['published_content'],original)
+        self.assertEqual(r['pending_publication']['content'],candidate)
+        self.assertIn(changed,r['conflicts'].values())
+        self.assertEqual(generated.read_text(),changed)
+        self.call('recover',dict(id=self.iid,authority='regenerate the generated note'))
+        r=self.record(); self.assertFalse(r['conflicts'])
+        self.assertIn(changed,r['publication_history'][-1]['conflicts'].values())
+        self.assertEqual(self.note.read_bytes(),self.original)
+
+    def test_resolved_publication_evidence_is_bounded(self):
+        self.register(); generated=self.generated()
+        for i in range(12):
+            generated.write_text('External edit '+str(i)+'\n'+'x'*40000)
+            self.call('reconcile')
+            self.assertTrue(self.record()['conflicts'])
+            self.call('recover',dict(id=self.iid,authority='regenerate'))
+        r=self.record()
+        self.assertLessEqual(len(r['publication_history']),8)
+        self.assertLessEqual(len(json.dumps(r['publication_history']).encode()),256*1024)
+        generated.write_text('Still unresolved\n'); self.call('reconcile')
+        self.assertIn('Still unresolved\n',self.record()['conflicts'].values())
+        self.assertEqual(self.note.read_bytes(),self.original)
+
+    def test_publication_crash_with_newer_observation_converges(self):
+        row=self.bind()
+        self.crash('position',dict(id=self.iid,text='Approved update',authority='accepted'),'published')
+        self.rows.write_text(json.dumps({'task-1':{'state':'queued','held':'yes','blocked':'no'}}))
+        self.call('reconcile')
+        self.assertEqual(self.record()['rows'][row]['status'],'Blocked')
+        self.assertIn('| Blocked |',(self.generated()).read_text())
+        self.assertEqual(self.note.read_bytes(),self.original)
+
     def test_configure_register_and_human_bytes(self):
         self.register()
         r=self.record()
         self.assertEqual(r['id'],self.iid)
         self.assertEqual(self.note.read_bytes(),self.original)
-        self.assertTrue((self.vault/'Generated'/f'{self.iid}.md').is_file())
+        self.assertTrue((self.generated()).is_file())
         self.call('reconcile',{})
+        self.assertEqual(self.note.read_bytes(),self.original)
+
+    def test_companion_has_stable_readable_name(self):
+        self.register(); r=self.record()
+        self.assertEqual(r['companion'],'Example - Status.md')
+        self.assertNotIn(self.iid,r['companion'])
+        generated=self.vault/'Generated'/r['companion']
+        self.assertTrue(generated.is_file())
+        self.call('position',dict(id=self.iid,text='Implementation is ready.',authority='accepted'))
+        self.assertEqual(self.record()['companion'],r['companion'])
+        self.assertEqual(self.note.read_bytes(),self.original)
+
+    def test_companion_name_is_contained_and_collisions_refuse(self):
+        self.configure()
+        self.call('register',dict(title='../Sales / Équipe #1',goal='Safe name',note='Work/Example.md'))
+        name=self.record()['companion']
+        self.assertEqual(name,'Sales Équipe 1 - Status.md')
+        second=str(uuid.uuid4()); note=self.vault/'Work/Second.md'
+        note.write_text('<!-- firstmate:initiative v=1 id='+second+' -->\n')
+        self.call('register',dict(title='SALES ÉQUIPE 1',goal='Separate goal',note='Work/Second.md'),False)
+        self.assertEqual(len(self.call('list')['initiatives']),1)
+        self.assertEqual(self.note.read_bytes(),self.original)
+
+    def test_list_reports_unconfigured_home(self):
+        self.assertEqual(self.call('list'),{'configured':False,'initiatives':[]})
+        self.assertFalse((self.home/'data/initiatives').exists())
+
+    def test_list_names_candidates_for_selection(self):
+        self.register(); second=str(uuid.uuid4())
+        (self.vault/'Work/Second.md').write_text('<!-- firstmate:initiative v=1 id='+second+' -->\n')
+        self.call('register',dict(title='Second',goal='Another goal',note='Work/Second.md',source='https://example.test/ticket/2'))
+        results=self.call('list')
+        self.assertTrue(results['configured'])
+        self.assertEqual({v['id'] for v in results['initiatives']},{self.iid,second})
+        self.assertEqual({v['title'] for v in results['initiatives']},{'Example','Second'})
+        self.assertEqual({v['source'] for v in results['initiatives']},{'https://example.test/ticket/1','https://example.test/ticket/2'})
+        self.assertEqual({v['state'] for v in results['initiatives']},{'active'})
+        self.call('resolve',{},False)
+
+    def test_list_reports_completed_and_archived_state(self):
+        self.register(); self.call('accept',dict(id=self.iid,revision='Accepted',authority='accepted'))
+        self.call('complete',dict(id=self.iid,criteria='met',disposition='no remaining work',authority='accepted'))
+        self.assertEqual(self.call('list')['initiatives'][0]['state'],'completed')
+        self.note.rename(self.vault/'Archive/Example.md')
+        self.call('archive',dict(id=self.iid,authority='archive accepted'))
+        self.assertEqual(self.call('list')['initiatives'][0]['state'],'archived')
+        self.assertEqual((self.vault/'Archive/Example.md').read_bytes(),self.original)
+
+    def test_list_is_read_only_and_worker_safe(self):
+        self.register(); record=self.home/'data/initiatives'/self.iid/'record.json'
+        before=record.read_bytes()
+        generated={p.name:(p.read_bytes(),p.stat().st_mtime_ns) for p in (self.vault/'Generated').iterdir()}
+        self.assertEqual(self.call('list',env=dict(self.env,FM_TASK_ID='worker'))['initiatives'][0]['id'],self.iid)
+        self.assertEqual(record.read_bytes(),before)
+        self.assertEqual(generated,{p.name:(p.read_bytes(),p.stat().st_mtime_ns) for p in (self.vault/'Generated').iterdir()})
         self.assertEqual(self.note.read_bytes(),self.original)
 
     def test_roots_must_be_disjoint(self):
@@ -190,7 +356,7 @@ else: sys.exit(2)
 
     def test_generated_conflict_keeps_both_documents(self):
         self.register()
-        generated=self.vault/'Generated'/f'{self.iid}.md'
+        generated=self.generated()
         changed=generated.read_bytes()+b'Unexpected human edit\n'; generated.write_bytes(changed)
         self.call('position',dict(id=self.iid,text='A material change.',authority='accepted update'))
         self.assertEqual(generated.read_bytes(),changed)
@@ -246,7 +412,7 @@ else: sys.exit(2)
         self.assertEqual(r['status'],'Planned'); self.assertIsNone(r['landing']); self.assertEqual(len(r['landing_history']),1)
         self.call('retire',dict(id=self.iid,row=row,authority='approved removal'))
         self.assertTrue(self.record()['rows'][row]['retired'])
-        self.assertNotIn('Renamed',(self.vault/'Generated'/f'{self.iid}.md').read_text())
+        self.assertNotIn('Renamed',(self.generated()).read_text())
 
     def forge(self, merged=True, target='main', mode='direct-PR'):
         row=self.bind(); self.meta(mode=mode)
@@ -261,6 +427,70 @@ else: sys.exit(2)
         self.tool('gh-axi', 'import base64,json,sys\ndef emit(x): print("api_response:\\n  body: "+base64.b64encode(json.dumps(x).encode()).decode()+"\\n  truncated: false")\np='+repr(payload)+"\nurl=sys.argv[2]\nif '/pulls/' in url: emit(p)\nelif '/compare/' in url: emit({'status':'ahead','merge_base_commit':{'sha':p['merge_commit_sha']}})\nelif '/git/commits/' in url: emit({'sha':p['merge_commit_sha']})\nelse: sys.exit(2)\n")
         self.call('capture',dict(task='task-1',event='merge',pr=pr))
         return row,sha
+
+    def provider_responses(self, payload, obj, comparison):
+        responses={'pull':payload,'object':obj,'comparison':comparison}
+        self.tool('gh-axi','import base64,json,sys\nr='+repr(responses)+'''\nurl=sys.argv[2]
+value=r['pull'] if '/pulls/' in url else r['object'] if '/git/commits/' in url else r['comparison']
+if value is None: sys.exit(1)
+print('api_response:\\n  body: '+base64.b64encode(json.dumps(value).encode()).decode()+'\\n  truncated: false')
+''')
+
+    def test_github_strategy_results_differ_from_worker_and_advanced_target(self):
+        row,_=self.forge(); pr='https://github.com/example/repo/pull/7'
+        for strategy in ('merge','squash','multi-commit rebase'):
+            with self.subTest(strategy=strategy):
+                self.call('reopen',dict(id=self.iid,row=row,scope='Accepted '+strategy,authority='accepted new scope'))
+                self.meta('generation-'+strategy.replace(' ','-'),mode='direct-PR')
+                self.call('capture',dict(task='task-1',event='spawn'))
+                self.call('cover',dict(id=self.iid,row=row,pr=pr,authority='accepted coverage'))
+                (self.repo/'file').write_text(strategy); self.git('commit','-qam',strategy)
+                integrated=self.git('rev-parse','HEAD')
+                (self.repo/'file').write_text(strategy+' later'); self.git('commit','-qam','later unrelated work')
+                tip=self.git('rev-parse','HEAD')
+                payload={'html_url':pr,'merged':True,'merge_commit_sha':integrated,'head':{'sha':'a'*40},'base':{'ref':'main','repo':{'full_name':'example/repo'}}}
+                self.provider_responses(payload,{'sha':integrated},{'status':'ahead','merge_base_commit':{'sha':integrated},'head_commit':{'sha':tip}})
+                self.call('reconcile')
+                landing=self.record()['rows'][row]['landing']
+                self.assertEqual(landing['commit'],integrated)
+                self.assertNotIn(landing['commit'],('a'*40,tip))
+        self.assertEqual(self.note.read_bytes(),self.original)
+
+    def test_github_missing_wrong_and_unavailable_evidence_stays_pending(self):
+        row,sha=self.forge(); pr='https://github.com/example/repo/pull/7'
+        payload={'html_url':pr,'merged':True,'merge_commit_sha':sha,'base':{'ref':'main','repo':{'full_name':'example/repo'}}}
+        obj={'sha':sha}; comparison={'status':'ahead','merge_base_commit':{'sha':sha}}
+        variants=[
+            ({**payload,'merged':False},obj,comparison),
+            ({**payload,'merge_commit_sha':None},obj,comparison),
+            (payload,None,comparison),
+            (payload,obj,{'status':'behind','merge_base_commit':{'sha':sha}}),
+            (payload,obj,{'status':'diverged','merge_base_commit':{'sha':'b'*40}}),
+            ({**payload,'html_url':pr+'0'},obj,comparison),
+            ({**payload,'base':{'ref':'main','repo':{'full_name':'another/repo'}}},obj,comparison),
+            ({**payload,'base':{'ref':'staging','repo':{'full_name':'example/repo'}}},obj,comparison),
+            (None,None,None),
+        ]
+        for supplied in variants:
+            self.provider_responses(*supplied); self.call('reconcile')
+            self.assertIsNone(self.record()['rows'][row]['landing'])
+            self.assertNotEqual(self.record()['rows'][row]['status'],'Done')
+        self.call('capture',dict(task='task-1',event='teardown'))
+        (self.home/'state/task-1.meta').unlink(); self.rows.write_text('{}')
+        self.provider_responses(payload,obj,comparison); self.call('reconcile')
+        self.assertEqual(self.record()['rows'][row]['landing']['commit'],sha)
+        self.assertEqual(self.note.read_bytes(),self.original)
+
+    def test_gitlab_delivery_retains_obligation_without_final_object_claim(self):
+        row=self.bind(); self.meta(mode='direct-PR'); self.call('capture',dict(task='task-1',event='spawn'))
+        pr='https://gitlab.com/group/subgroup/repo/-/merge_requests/7'
+        self.call('cover',dict(id=self.iid,row=row,pr=pr,authority='accepted coverage'))
+        self.call('capture',dict(task='task-1',event='merge',pr=pr)); self.call('reconcile')
+        current=self.record()['rows'][row]
+        self.assertIsNone(current['landing']); self.assertEqual(current['obligation']['pr'],pr)
+        self.assertIn('unavailable for this provider',current['freshness'])
+        self.assertNotEqual(current['status'],'Done')
+        self.assertEqual(self.note.read_bytes(),self.original)
 
     def test_forge_uses_landed_object_not_head(self):
         row,sha=self.forge()
@@ -296,17 +526,18 @@ else: sys.exit(2)
         self.call('reconcile',{})
         self.assertFalse(self.record()['completed'])
         self.assertEqual(self.record()['rows'][row]['status'],'Blocked')
-        self.assertNotIn(sha[:12],(self.vault/'Generated'/f'{self.iid}.md').read_text())
+        self.assertNotIn(sha[:12],(self.generated()).read_text())
         self.assertEqual(self.record()['rows'][row]['landing']['commit'],sha)
 
     def test_render_is_useful_concise_and_deterministic(self):
         self.bind()
         self.call('position',dict(id=self.iid,text='The design is approved and implementation can begin.',next='Start the account import.',blockers=[],decisions=[],authority='accepted summary'))
-        p=self.vault/'Generated'/f'{self.iid}.md'; first=p.read_bytes()
+        p=self.generated(); first=p.read_bytes()
         rendered=first.decode()
         self.assertIn('Make account imports reliable for support teams.',rendered)
         self.assertIn('Start the account import.',rendered)
         self.assertIn('[Initiative plan]',rendered)
+        self.assertLess(rendered.index('This status note is generated.'),rendered.index('## Goal'))
         self.assertLess(rendered.index('## Goal'),rendered.index('## Current state'))
         self.assertLess(rendered.index('## Current state'),rendered.index('## Completed work'))
         self.assertLess(rendered.index('## Completed work'),rendered.index('## Next action'))
@@ -326,7 +557,7 @@ else: sys.exit(2)
         self.assertFalse((self.home/'data/initiatives').exists())
 
     def test_generated_symlink_and_hardlink_never_write_human(self):
-        self.register(); generated=self.vault/'Generated'/f'{self.iid}.md'
+        self.register(); generated=self.generated()
         generated.unlink(); generated.symlink_to(self.note)
         self.call('position',dict(id=self.iid,text='Changed',authority='accepted'))
         self.assertEqual(self.note.read_bytes(),self.original)
@@ -356,10 +587,10 @@ else: sys.exit(2)
         self.assertTrue(self.record()['publication_error'])
         offline.rename(self.vault); self.call('reconcile',{})
         self.assertFalse(self.record()['publication_error'])
-        self.assertIn(sha[:12],(self.vault/'Generated'/f'{self.iid}.md').read_text())
+        self.assertIn(sha[:12],(self.generated()).read_text())
 
     def test_same_generation_metadata_enrichment_is_safe(self):
-        row=self.bind(); self.meta(); self.call('capture',dict(task='task-1',event='spawn'))
+        row=self.bind(); self.meta(mode='direct-PR'); self.call('capture',dict(task='task-1',event='spawn'))
         p=self.home/'state/task-1.meta'; p.write_text(p.read_text()+'pr=https://github.com/example/repo/pull/7\n')
         self.call('capture',dict(task='task-1',event='teardown'))
         self.assertEqual(self.record()['rows'][row]['obligation']['attempt']['metadata']['pr'],'https://github.com/example/repo/pull/7')
@@ -371,18 +602,18 @@ else: sys.exit(2)
         self.assertIsNone(self.record()['rows'][row]['landing'])
 
     def test_recovery_keeps_conflict_evidence(self):
-        self.register(); p=self.vault/'Generated'/f'{self.iid}.md'
+        self.register(); p=self.generated()
         changed=p.read_text()+'Unexpected edit\n'; p.write_text(changed)
         self.call('reconcile',{})
         self.call('recover',dict(id=self.iid,authority='regenerate the machine-owned note'))
         self.assertNotEqual(p.read_text(),changed)
-        self.assertIn(changed,self.record()['conflicts'].values())
+        self.assertIn(changed,self.record()['publication_history'][-1]['conflicts'].values())
         self.assertEqual(self.note.read_bytes(),self.original)
 
     def test_interrupted_publication_acknowledges_candidate_without_rewrite(self):
         self.register(); r=self.record(); old=r['published']
         self.call('position',dict(id=self.iid,text='Approved design is ready.',authority='accepted'))
-        r=self.record(); p=self.vault/'Generated'/f'{self.iid}.md'; candidate=p.read_bytes(); before=p.stat().st_mtime_ns
+        r=self.record(); p=self.generated(); candidate=p.read_bytes(); before=p.stat().st_mtime_ns
         r['pending_publication']={'digest':hashlib.sha256(candidate).hexdigest(),'content':candidate.decode()}; r['published']=old
         record=self.home/'data/initiatives'/self.iid/'record.json'; record.write_text(json.dumps(r))
         self.call('reconcile',{})
@@ -411,6 +642,126 @@ else: sys.exit(2)
         self.assertEqual(receipt['before'],self.before); self.assertEqual(receipt['commit'],sha)
         self.call('reconcile',{})
         self.assertEqual(self.record()['rows'][row]['status'],'Done')
+        self.assertEqual(self.note.read_bytes(),self.original)
+
+    def local_delivery(self):
+        row=self.bind(); self.meta(); self.call('capture',dict(task='task-1',event='spawn'))
+        self.git('checkout','-qb','fm/task-1')
+        (self.repo/'file').write_text('landed'); self.git('commit','-qam','landed')
+        sha=self.git('rev-parse','HEAD'); self.git('checkout','-q','main')
+        return row,sha
+
+    def merge_local(self, good=True):
+        result=subprocess.run(['bash',str(self.code/'fm-merge-local.sh'),'task-1'],env=self.env,capture_output=True,text=True)
+        self.assertEqual(result.returncode==0,good,result.stdout+result.stderr)
+        return result
+
+    def intercept_capture(self, event, after=False):
+        helper=self.code/'fm-initiative.sh'; helper.unlink()
+        helper.write_text('#!/bin/bash\nif [ "${1:-}" = capture-task ] && [ "${3:-}" = '+event+' ]; then\n'+
+                          ('  "'+str(ROOT/'bin/fm-initiative.sh')+'" "$@" || exit $?\n' if after else '')+
+                          '  exit 55\nfi\nexec "'+str(ROOT/'bin/fm-initiative.sh')+'" "$@"\n')
+        helper.chmod(0o755)
+
+    def restore_capture(self):
+        helper=self.code/'fm-initiative.sh'; helper.unlink(); helper.symlink_to(ROOT/'bin/fm-initiative.sh')
+
+    def test_local_intent_persistence_failure_prevents_merge(self):
+        _,sha=self.local_delivery(); self.intercept_capture('local-intent')
+        self.merge_local(False)
+        self.assertEqual(self.git('rev-parse','HEAD'),self.before)
+        self.assertNotEqual(self.git('rev-parse','HEAD'),sha)
+        self.assertEqual(self.note.read_bytes(),self.original)
+
+    def test_local_intent_before_git_update_stays_unlanded(self):
+        row,sha=self.local_delivery(); self.intercept_capture('local-intent',after=True)
+        self.merge_local(False); self.restore_capture(); self.call('reconcile')
+        self.assertEqual(self.git('rev-parse','HEAD'),self.before)
+        self.assertEqual(self.record()['rows'][row]['local_intent']['commit'],sha)
+        self.assertIsNone(self.record()['rows'][row]['landing'])
+        self.call('capture',dict(task='task-1',event='teardown'),False)
+        self.assertEqual(self.note.read_bytes(),self.original)
+
+    def test_local_failed_git_update_stays_unlanded(self):
+        row,sha=self.local_delivery(); real=shutil.which('git')
+        self.tool('git','import os,sys\nif "merge" in sys.argv: sys.exit(56)\nos.execv('+repr(real)+',["git",*sys.argv[1:]])\n')
+        self.merge_local(False); self.call('reconcile')
+        self.assertEqual(self.git('rev-parse','HEAD'),self.before)
+        self.assertEqual(self.record()['rows'][row]['local_intent']['commit'],sha)
+        self.assertIsNone(self.record()['rows'][row]['landing'])
+        self.assertEqual(self.note.read_bytes(),self.original)
+
+    def test_local_capture_failure_recovers_exact_commit_without_another_merge(self):
+        row,sha=self.local_delivery(); self.intercept_capture('local')
+        self.merge_local(False); self.restore_capture()
+        self.assertEqual(self.git('rev-parse','HEAD'),sha)
+        (self.repo/'file').write_text('later work'); self.git('commit','-qam','later')
+        real=shutil.which('git')
+        self.tool('git','import os,sys\nif "merge" in sys.argv: sys.exit(57)\nos.execv('+repr(real)+',["git",*sys.argv[1:]])\n')
+        self.merge_local(); self.merge_local()
+        self.assertEqual(self.record()['rows'][row]['landing']['commit'],sha)
+        self.call('capture',dict(task='task-1',event='teardown'))
+        (self.home/'state/task-1.meta').unlink(); self.rows.write_text('{}'); self.call('reconcile')
+        self.assertEqual(self.record()['rows'][row]['status'],'Done')
+        self.assertEqual(self.record()['rows'][row]['landing']['commit'],sha)
+        self.assertEqual(self.note.read_bytes(),self.original)
+
+    def test_local_pending_result_refuses_rewrite_and_replacement_generation(self):
+        row,sha=self.local_delivery(); self.intercept_capture('local')
+        self.merge_local(False); self.restore_capture()
+        self.meta('replacement')
+        self.call('capture',dict(task='task-1',event='local-retry'),False)
+        self.meta(); self.git('reset','--hard',self.before)
+        self.call('reconcile')
+        self.assertIsNone(self.record()['rows'][row]['landing'])
+        self.assertEqual(self.record()['rows'][row]['local_intent']['commit'],sha)
+        self.assertEqual(self.note.read_bytes(),self.original)
+
+    def test_local_crash_immediately_after_git_update_recovers(self):
+        row,sha=self.local_delivery(); real=shutil.which('git')
+        self.tool('git','import os,signal,subprocess,sys\nrc=subprocess.call(['+repr(real)+',*sys.argv[1:]])\nif "merge" in sys.argv and rc==0: os.kill(os.getppid(),signal.SIGKILL)\nsys.exit(rc)\n')
+        self.merge_local(False); (self.fake/'git').unlink()
+        self.assertEqual(self.git('rev-parse','HEAD'),sha)
+        self.call('capture',dict(task='task-1',event='teardown'))
+        (self.home/'state/task-1.meta').unlink(); self.rows.write_text('{}'); self.call('reconcile')
+        self.assertEqual(self.record()['rows'][row]['landing']['commit'],sha)
+        self.assertEqual(self.record()['rows'][row]['status'],'Done')
+        self.assertEqual(self.note.read_bytes(),self.original)
+
+    def execution_observation(self, state):
+        helper=self.code/'fm-crew-state.sh'
+        if helper.exists(): helper.unlink()
+        helper.write_text('#!/bin/bash\nprintf "%s\\n" '+repr(state)+'\n'); helper.chmod(0o755)
+
+    def test_no_mistakes_proof_survives_teardown_before_first_reconcile(self):
+        row,sha=self.forge(mode='no-mistakes')
+        self.execution_observation('state: done · source: run-step · checks green')
+        self.call('capture',dict(task='task-1',event='delivery'))
+        self.call('capture',dict(task='task-1',event='teardown'))
+        (self.home/'state/task-1.meta').unlink(); self.rows.write_text('{}'); self.call('reconcile')
+        self.assertEqual(self.record()['rows'][row]['status'],'Done')
+        self.assertEqual(self.record()['rows'][row]['landing']['commit'],sha)
+        self.assertEqual(self.note.read_bytes(),self.original)
+
+    def test_cleanup_refuses_missing_failed_or_wrong_generation_delivery_proof(self):
+        row,_=self.forge(mode='no-mistakes')
+        for current in ('state: failed · source: run-step · failed','state: unknown · source: run-step · unavailable','state: done · source: status-log · claimed'):
+            self.execution_observation(current)
+            self.call('capture',dict(task='task-1',event='delivery'),False)
+            self.call('capture',dict(task='task-1',event='teardown'),False)
+        self.execution_observation('state: done · source: run-step · checks green')
+        self.call('capture',dict(task='task-1',event='delivery'))
+        self.meta('replacement',mode='no-mistakes')
+        self.call('capture',dict(task='task-1',event='teardown'),False)
+        self.assertIsNone(self.record()['rows'][row]['landing'])
+        self.assertEqual(self.note.read_bytes(),self.original)
+
+    def test_cleanup_refuses_code_advanced_after_delivery_verification(self):
+        self.forge(mode='no-mistakes')
+        self.execution_observation('state: done · source: run-step · checks green')
+        self.call('capture',dict(task='task-1',event='delivery'))
+        (self.repo/'file').write_text('unverified later change'); self.git('commit','-qam','later')
+        self.call('capture',dict(task='task-1',event='teardown'),False)
         self.assertEqual(self.note.read_bytes(),self.original)
 
     def test_deferred_reconciliation_keeps_captured_home_authority(self):
