@@ -51,16 +51,18 @@
 #     home without the current Pi session lock cannot have a live lease, so
 #     the guard is a no-op there - non-Pi behavior is unchanged by construction.
 #   - Role partition (fm_lease_forbid_branch): actions MAIN alone owns -
-#     merging a PR, landing local-only work, spawning workers - refuse the
-#     branch actor outright, lease or no lease.
+#     merging a PR, landing local-only work, spawning workers, initiative
+#     mutation and publication - refuse the branch actor outright, lease or no
+#     lease. fm-initiative.sh exempts only its private delivery/teardown
+#     capture, so the branch's ordinary landed-work teardown stays open.
 #   - "backlog" is a reserved claimable resource name used by the branch
 #     prompt around its own data/backlog.md writes. This is deliberately
 #     branch-side containment only; main's tasks-axi path has no executable
 #     backlog lease guard in this scope.
 #
 # Sourced by bin/fm-send.sh, bin/fm-control.sh, bin/fm-teardown.sh,
-# bin/fm-pr-merge.sh, bin/fm-merge-local.sh, bin/fm-spawn.sh, and
-# bin/fm-lease.sh. Callers must have $STATE resolved before calling. No side
+# bin/fm-pr-merge.sh, bin/fm-merge-local.sh, bin/fm-spawn.sh,
+# bin/fm-initiative.sh, and bin/fm-lease.sh. Callers must have $STATE resolved before calling. No side
 # effects on source. set -u / set -e safe.
 
 # Distinct from usage errors (2), the gate refusal (3), and fm-send's

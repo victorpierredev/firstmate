@@ -11,13 +11,13 @@ bin/fm-test-run.sh tests/fm-backlog-atomicity.test.sh
 bin/fm-test-run.sh tests/fm-captain-hold-lifecycle.test.sh
 ```
 
-The initiative suite reports `Ran 57 tests` and `OK`.
+The initiative suite reports `Ran 68 tests` and `OK`.
 The full backlog and captain-hold suites report `exit=0`.
 The installed tasks-axi is markdown-only, so the captain-hold suite explicitly skips its live Beads migration cases; its structured adapter fixtures still run.
 The macOS backlog run uses the existing portable timeout helper without installing GNU timeout.
 
 The initiative cases execute the public helper with disposable homes, vaults, Git histories, and structured owner/provider fixtures.
-They cover read-only human notes, path and ownership refusal, readable stable names and collisions, all four statuses, explicit coverage, generation and scope changes, publication interruption, conflict retention, bounded resolved history, pre-merge persistence, failed Git updates, post-merge crashes, cleanup ordering, retained delivery proof, rewritten history, and unsupported providers.
+They cover read-only human notes, path and ownership refusal, readable stable names and collisions, all four statuses, explicit coverage, generation and scope changes, publication interruption, conflict retention, bounded resolved history, pre-merge persistence, failed Git updates, post-merge crashes, cleanup ordering, supervision-branch cleanup capture, forced discard, local retry and unapplied-intent replacement, retained delivery proof, rewritten history, unsupported providers, unreadable unrelated notes, and bounded automatic reconciliation of completed or archived initiatives.
 Publication crash tests terminate a separate process at filesystem publication boundaries and recover through the normal command.
 These are process-crash tests, not power-loss qualification.
 
