@@ -1,0 +1,17 @@
+Live read-only `fm-initiative.sh verify-provider` against github.com via the authenticated gh-axi (disposable repo whose origin is kunchenguid/firstmate)
+
+--- merged PR #4800, matching repo + target main
+{"commit": "4055cbd6ec99e54210e01698c7c9b01f66e0a74c", "target": "main", "pr": "https://github.com/kunchenguid/firstmate/pull/4800", "url": "https://github.com/kunchenguid/firstmate/commit/4055cbd6ec99e54210e01698c7c9b01f66e0a74c", "provenance": "github-rest-merged-object"}
+exit=0
+--- same PR, wrong target branch "release"
+fm-initiative: merged delivery targets a different integration branch or repository
+exit=2
+--- same PR, bound repo's origin is a different repository
+fm-initiative: forge repository differs from the bound repository
+exit=2
+--- GitLab merge request (unsupported provider)
+fm-initiative: final-object verification is unavailable for this provider; retain the landing obligation
+exit=2
+--- open, unmerged PR #4854
+null   (no landing claimed)
+exit=0

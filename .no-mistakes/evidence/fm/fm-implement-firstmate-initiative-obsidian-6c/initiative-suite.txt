@@ -1,0 +1,10 @@
+FM_TEST_BEGIN 2026-09-18T17:22:29Z tests/fm-initiative.test.sh family=unclassified expected_gate_skip=none
+....................................................................
+----------------------------------------------------------------------
+Ran 68 tests in 70.457s
+
+OK
+FM_TEST_END 2026-09-18T17:23:41Z tests/fm-initiative.test.sh exit=0 duration_ms=71335 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=71406
+FM_TEST_SUMMARY_FAMILY family=unclassified count=1 duration_ms=71335 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-initiative.test.sh duration_ms=71335

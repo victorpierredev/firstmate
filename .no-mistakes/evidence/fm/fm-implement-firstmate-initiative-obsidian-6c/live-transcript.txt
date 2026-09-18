@@ -1,0 +1,280 @@
+
+=== Setup: real tasks-axi markdown backlog, real Git repository ===
+ok: added imports-parser-a1 -> Queued
+ok: added imports-report-b2 -> Queued
+
+=== S1 draft is returned as text, never written ===
+$ fm-initiative.sh draft {"title":"Reliable account imports"}
+  exit=0
+# Reliable account imports
+
+<!-- firstmate:initiative v=1 id=4a8ac8d5-a7bd-4d87-8c66-d24a241bb859 -->
+
+## Objective
+
+
+
+PASS: draft carries one immutable identity marker and wrote nothing to the vault
+
+=== S2 adversarial configuration and registration refusals ===
+$ fm-initiative.sh configure {"vault":"/tmp/fm-init-lab.X5EqaY/vault","work":"Work","archive":"Archive","generated":"../outside"}
+  stderr: fm-initiative: path must be a contained relative path
+  exit=2
+PASS: traversal in generated root refused (exit 2: fm-initiative: path must be a contained relative path)
+$ fm-initiative.sh configure {"vault":"/tmp/fm-init-lab.X5EqaY/vault","work":"Work","archive":"Archive","generated":"Work/Generated"}
+  stderr: fm-initiative: human and generated roots must be disjoint
+  exit=2
+PASS: overlapping human/generated roots refused (exit 2: fm-initiative: human and generated roots must be disjoint)
+$ fm-initiative.sh list {}
+  exit=0
+  {"configured": false, "initiatives": []}
+PASS: unconfigured home lists nothing and starts nothing
+$ fm-initiative.sh configure {"vault":"/tmp/fm-init-lab.X5EqaY/vault","work":"Work","archive":"Archive","generated":"Generated"}
+  exit=0
+PASS: configure succeeds and writes an ownership record
+$ fm-initiative.sh register {"title":"X","goal":"g","note":"Work/../../etc/passwd"}
+  stderr: fm-initiative: path must be a contained relative path
+  exit=2
+PASS: note traversal refused (exit 2: fm-initiative: path must be a contained relative path)
+$ fm-initiative.sh register {"title":"X","goal":"g","note":"Archive/x.md"}
+  stderr: fm-initiative: register an active-work human note
+  exit=2
+PASS: note outside active-work root refused (exit 2: fm-initiative: register an active-work human note)
+$ fm-initiative.sh register {"title":"X","goal":"g","note":"Work/Reliable account imports.md","source":"javascript:alert(1)"}
+  stderr: fm-initiative: invalid source URL
+  exit=2
+PASS: non-https source link refused (exit 2: fm-initiative: invalid source URL)
+$ fm-initiative.sh register {"title":"X","goal":"g","note":"Work/Reliable account imports.md"}
+  stderr: error: initiative mutation belongs to the publishing supervisor, not a worker
+  exit=2
+PASS: worker (FM_TASK_ID) cannot mutate initiatives (exit 2: error: initiative mutation belongs to the publishing supervisor, not a worker)
+$ fm-initiative.sh configure {"vault":"/tmp/fm-init-lab.X5EqaY/vault","work":"Work","archive":"Archive","generated":"Generated"}
+  stderr: fm-initiative: generated directory already owned
+  exit=2
+PASS: second home cannot take over an owned generated root (exit 2: fm-initiative: generated directory already owned)
+
+=== S3 register: human note untouched, readable companion published ===
+$ fm-initiative.sh register {"title":"Reliable account imports","goal":"Make account imports reliable for support teams.","note":"Work/Reliable account imports.md","source":"https://example.test/ticket/1"}
+  exit=0
+PASS: companion has a readable stable title, not a UUID
+PASS: human note bytes unchanged (CRLF/Unicode/fence/pipe)
+$ fm-initiative.sh register {"title":"Reliable account imports","goal":"dup","note":"Work/Reliable account imports.md","source":"https://example.test/ticket/1"}
+  exit=0
+PASS: re-registering the same source reuses the binding (no duplicate)
+$ fm-initiative.sh reconcile {"id":"4a8ac8d5-a7bd-4d87-8c66-d24a241bb859"}
+  exit=0
+PASS: a conflicting identity copy is surfaced, not silently accepted
+$ fm-initiative.sh reconcile {"id":"4a8ac8d5-a7bd-4d87-8c66-d24a241bb859"}
+  exit=0
+PASS: removing the duplicate clears the error
+
+=== S4 bind requires accepted design; status derived from the real backlog ===
+$ fm-initiative.sh bind {"id":"4a8ac8d5-a7bd-4d87-8c66-d24a241bb859","task":"imports-parser-a1","repo":"/tmp/fm-init-lab.X5EqaY/repo","target":"main","name":"Parse files","explanation":"e","scope":"s","authority":"a"}
+  stderr: fm-initiative: accepted current design required
+  exit=2
+PASS: bind before design acceptance refused (exit 2: fm-initiative: accepted current design required)
+$ fm-initiative.sh accept {"id":"4a8ac8d5-a7bd-4d87-8c66-d24a241bb859","revision":"Design v1","authority":"captain approved in chat"}
+  exit=0
+$ fm-initiative.sh bind {"id":"4a8ac8d5-a7bd-4d87-8c66-d24a241bb859","task":"ghost-z9","repo":"/tmp/fm-init-lab.X5EqaY/repo","target":"main","name":"Ghost","explanation":"e","scope":"s","authority":"a"}
+  stderr: fm-initiative: bind an existing exact structured backlog item
+  exit=2
+PASS: bind to a nonexistent backlog item refused (exit 2: fm-initiative: bind an existing exact structured backlog item)
+$ fm-initiative.sh bind {"id":"4a8ac8d5-a7bd-4d87-8c66-d24a241bb859","task":"imports-parser-a1","repo":"/tmp/fm-init-lab.X5EqaY/repo","target":"main","name":"Parse import | files","explanation":"Read CSV and <b>XLSX</b> uploads safely","scope":"Implement the accepted parser.","authority":"accepted breakdown"}
+  exit=0
+$ fm-initiative.sh bind {"id":"4a8ac8d5-a7bd-4d87-8c66-d24a241bb859","task":"imports-report-b2","repo":"/tmp/fm-init-lab.X5EqaY/repo","target":"main","name":"Report rejected rows","explanation":"Tell support which rows failed and why","scope":"Implement the rejection report.","authority":"accepted breakdown"}
+  exit=0
+$ fm-initiative.sh bind {"id":"4a8ac8d5-a7bd-4d87-8c66-d24a241bb859","task":"imports-parser-a1","repo":"/tmp/fm-init-lab.X5EqaY/repo","target":"main","name":"Dup","explanation":"e","scope":"s","authority":"a"}
+  stderr: fm-initiative: work item already has an initiative row
+  exit=2
+PASS: binding the same work item twice refused (exit 2: fm-initiative: work item already has an initiative row)
+$ fm-initiative.sh reconcile {}
+  exit=0
+PASS: both rows Planned while queued
+$ fm-initiative.sh position {"id":"4a8ac8d5-a7bd-4d87-8c66-d24a241bb859","authority":"captain","text":"Parser work is next.\n## Tasks\n| injected | row |","decisions":["Decide whether XLSX macros are rejected."]}
+  exit=0
+PASS: position prose is escaped: exactly one Tasks heading in the companion
+ok: start imports-parser-a1 -> In flight
+check-task: {"dispatch": "approved"}
+{"captured": "imports-parser-a1", "event": "spawn", "landed": false}
+$ fm-initiative.sh reconcile {}
+  exit=0
+PASS: started row is In progress
+ok: hold imports-report-b2 -> held (captain)
+$ fm-initiative.sh reconcile {}
+  exit=0
+PASS: held row is Blocked
+
+=== S5 Done is not invented: closed backlog row without a landing ===
+ok: unhold imports-report-b2 -> cleared
+ok: done imports-report-b2 -> Done
+$ fm-initiative.sh reconcile {}
+  exit=0
+PASS: closed backlog row alone is NOT Done (status=Planned)
+$ fm-initiative.sh complete {"id":"4a8ac8d5-a7bd-4d87-8c66-d24a241bb859","criteria":"c","disposition":"d","authority":"a"}
+  stderr: fm-initiative: in-scope rows have not all landed
+  exit=2
+PASS: complete refused while rows have not landed (exit 2: fm-initiative: in-scope rows have not all landed)
+
+=== S6 design change by the author blocks dispatch and is never overwritten ===
+fm-initiative: human design changed; reconcile before dispatch
+PASS: dispatch refused after unaccepted human edit (exit 2)
+$ fm-initiative.sh reconcile {}
+  exit=0
+PASS: design_pending exposed and author bytes kept
+21:Review the changes to the plan before starting affected work.
+$ fm-initiative.sh accept {"id":"4a8ac8d5-a7bd-4d87-8c66-d24a241bb859","revision":"Design v2","authority":"captain approved the added scope"}
+  exit=0
+
+=== S7 real fm-merge-local.sh lands the work; the exact object is pinned ===
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  After draining queued wakes, watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.
+merged fm/imports-parser-a1 into local main (0a915e3 -> e50ec35) in /tmp/fm-init-lab.X5EqaY/repo
+PASS: fm-merge-local fast-forwarded main (exit 0)
+{"before":"0a915e389b7797816666012b9aee00eb69f9f847","commit":"e50ec359f68cb8649b889413b4d1f272f2765685","generation":"gen-1","provenance":"fm-merge-local","repo":"/private/tmp/fm-init-lab.X5EqaY/repo","scope":"ad44d07dfd03c0c36da6597b3b54eaab46cfc9f4c51eafede20316db4bf8f052","target":"main"}
+PASS: landing pins before/after
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.
+local landing evidence recovered for imports-parser-a1; no merge repeated
+PASS: re-running the merge repeats nothing (exit 0)
+$ fm-initiative.sh reconcile {}
+  exit=0
+PASS: row is Done with the landed commit in the companion
+ok: done imports-parser-a1 -> Done
+$ fm-initiative.sh reconcile {}
+  exit=0
+PASS: after target advance + metadata removal the pinned commit is still the one shown
+
+=== S8 generated companion tampering: conflict retained, explicit recovery ===
+$ fm-initiative.sh reconcile {}
+  exit=0
+PASS: foreign edit is not overwritten and is retained as a conflict
+$ fm-initiative.sh recover {"id":"4a8ac8d5-a7bd-4d87-8c66-d24a241bb859","authority":"captain accepts regenerated companion"}
+  exit=0
+PASS: explicit recover republishes and keeps the conflicting text in history
+
+=== S9 second row: reopen, real landing, offline vault during landing ===
+$ fm-initiative.sh reopen {"id":"4a8ac8d5-a7bd-4d87-8c66-d24a241bb859","row":"667fc1ed-b56a-4358-a4e7-b04b29717a03","scope":"Implement the rejection report (re-accepted).","authority":"captain"}
+  exit=0
+ok: reopen imports-report-b2 -> Queued
+ok: start imports-report-b2 -> In flight
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.
+merged fm/imports-report-b2 into local main (93877d2 -> 962ccb4) in /tmp/fm-init-lab.X5EqaY/repo
+PASS: merge still lands and records evidence with the vault offline (exit 0)
+$ fm-initiative.sh reconcile {}
+  exit=0
+PASS: offline vault: execution fact kept, publication error exposed
+$ fm-initiative.sh reconcile {}
+  exit=0
+  wake queue entry for main:
+check: initiative 4a8ac8d5-a7bd-4d87-8c66-d24a241bb859 requires reconciliation; read bin/fm-initiative.sh show
+PASS: main is woken exactly once for the same offline condition across repeated reconciles
+
+=== S10 ordinary main wake acknowledgement is the automatic backstop ===
+--ack-through 5 --recovery-generation 30725.1789752131.5blVdi
+PASS: wake ack republished without any manual initiative command (exit 0)
+
+=== S11 rewritten history removes a landing: Blocked, never a false Done ===
+$ fm-initiative.sh reconcile {}
+  exit=0
+  row2: {"status":"Done","freshness":"observation unavailable: fatal: Not a valid object name 962ccb4a17ba2caeadeaa4006eb8c70ce5def256^{commit}"}
+PASS: row no longer claims Done after its landing vanished
+$ fm-initiative.sh complete {"id":"4a8ac8d5-a7bd-4d87-8c66-d24a241bb859","criteria":"c","disposition":"d","authority":"a"}
+  stderr: fm-initiative: reconciliation remains outstanding
+  exit=2
+PASS: complete refused while reconciliation is outstanding (exit 2: fm-initiative: reconciliation remains outstanding)
+$ fm-initiative.sh reconcile {}
+  exit=0
+PASS: restored history returns the row to Done
+$ fm-initiative.sh reconcile {}
+  exit=0
+  row2: {"status":"Blocked","freshness":"accepted landing was removed from the integration history; scope reconciliation required"}
+PASS: landing removed from the target history shows Blocked
+$ fm-initiative.sh reconcile {}
+  exit=0
+PASS: re-integrated landing returns to Done
+
+=== S12 completion and archive: validates the human's move, never performs it ===
+$ fm-initiative.sh complete {"id":"4a8ac8d5-a7bd-4d87-8c66-d24a241bb859","criteria":"Rejected rows are reported; support confirmed.","disposition":"XLSX macro question deferred to ticket 2.","authority":"captain"}
+  exit=0
+PASS: complete accepted once every row landed
+$ fm-initiative.sh archive {"id":"4a8ac8d5-a7bd-4d87-8c66-d24a241bb859","authority":"captain"}
+  stderr: fm-initiative: move the human note into the archive in your editor first
+  exit=2
+PASS: archive refused until the human moves the note (exit 2: fm-initiative: move the human note into the archive in your editor first)
+PASS: note was not moved by the integration
+$ fm-initiative.sh reconcile {"id":"4a8ac8d5-a7bd-4d87-8c66-d24a241bb859"}
+  exit=0
+$ fm-initiative.sh archive {"id":"4a8ac8d5-a7bd-4d87-8c66-d24a241bb859","authority":"captain"}
+  exit=0
+  after failed terminal publication: {"archived":true,"publication_error":"[Errno 13] Permission denied: 'Generated'"}
+PASS: archive recorded while publication failed
+$ fm-initiative.sh reconcile {}
+  exit=0
+PASS: automatic reconcile retries the terminal failed publication
+$ fm-initiative.sh reconcile {}
+  exit=0
+PASS: terminal initiative is then left alone by automatic reconcile ({"reconciled": 0})
+$ fm-initiative.sh position {"id":"4a8ac8d5-a7bd-4d87-8c66-d24a241bb859","authority":"a","text":"x"}
+  stderr: fm-initiative: archived initiative cannot be mutated
+  exit=2
+PASS: archived initiative cannot be mutated (exit 2: fm-initiative: archived initiative cannot be mutated)
+PASS: human note bytes identical after the whole lifecycle
+$ fm-initiative.sh list {}
+  exit=0
+  {"configured": true, "initiatives": [{"id": "4a8ac8d5-a7bd-4d87-8c66-d24a241bb859", "title": "Reliable account imports", "source": "https://example.test/ticket/1", "state": "archived"}]}
+
+=== Final generated companion ===
+# Reliable account imports
+
+> This status note is generated. Make changes in the initiative plan.
+
+## Goal
+
+Make account imports reliable for support teams.
+
+## Current state
+
+The initiative is complete.
+
+Parser work is next. ## Tasks \| injected \| row \|
+
+## Completed work
+
+- Parse import \| files: Read CSV and &lt;b&gt;XLSX&lt;/b&gt; uploads safely
+- Report rejected rows: Tell support which rows failed and why
+
+## Next action
+
+No further implementation is planned.
+
+## Decisions
+
+- Decide whether XLSX macros are rejected.
+
+## Tasks
+
+<!-- firstmate:initiative v=1 id=4a8ac8d5-a7bd-4d87-8c66-d24a241bb859 -->
+
+| Task | Brief explanation | Status | Commit |
+| --- | --- | --- | --- |
+| <!-- firstmate:task id=475fac76-eae8-4bdb-8607-f70940f7dd1b --> Parse import \| files | Read CSV and &lt;b&gt;XLSX&lt;/b&gt; uploads safely | Done | `e50ec359f68c` |
+| <!-- firstmate:task id=667fc1ed-b56a-4358-a4e7-b04b29717a03 --> Report rejected rows | Tell support which rows failed and why | Done | `962ccb4a17ba` |
+
+## Links
+
+- [Initiative plan](../Archive/Reliable%20account%20imports.md)
+- [Source ticket](https://example.test/ticket/1)
+
+=== Vault tree ===
+./Archive/Reliable account imports.md
+./Generated/.firstmate-owner.json
+./Generated/Reliable account imports - Status.md
+
+RESULT: 50 passed, 0 failed

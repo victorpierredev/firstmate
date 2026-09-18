@@ -1,0 +1,14 @@
+$ fm-initiative.sh capture-task imports-report-b2 teardown   # in-progress local-only row, nothing landed
+fm-initiative: local landing evidence is missing; retain task before cleanup
+exit=2
+$ fm-initiative.sh capture-task imports-parse-a1 teardown   # landed row
+{"captured": "imports-parse-a1", "event": "teardown", "landed": false}
+exit=0
+$ fm-initiative.sh capture-task imports-report-b2 discard   # explicit --force discard authority
+{"captured": "imports-report-b2", "event": "discard", "landed": false}
+exit=0
+{"status":"In progress","started":false,"abandoned":[{"generation":"gen-1","reason":"local landing evidence is missing; retain task before cleanup"}]}
+$ FM_SUPERVISION_ACTOR probe: status request starts nothing
+{"configured": true, "initiatives": [{"id": "3c833a89-a761-4052-979d-6c6401f81e9a", "title": "Reliable account imports", "source": "https://example.test/ticket/1", "state": "active"}]}
+{"id":"3c833a89-a761-4052-979d-6c6401f81e9a","title":"Reliable account imports"}
+backlog unchanged by list/resolve
