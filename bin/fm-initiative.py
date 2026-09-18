@@ -406,7 +406,14 @@ def capture(c,q):
                     row['attempt']=proposed
                 row['started']=True
             else:
-                check(row.get('attempt') and row['attempt']['generation']==proposed['generation'] and row['attempt']['scope']==proposed['scope'],'stale attempt generation or scope')
+                fresh=row.get('attempt') and row['attempt']['generation']==proposed['generation'] and row['attempt']['scope']==proposed['scope']
+                if event=='discard' and not fresh:
+                    # Explicit discard authority abandons an attempt the row no
+                    # longer tracks (for example after reopen) without touching
+                    # the row's current attempt, obligation, or landing.
+                    row.setdefault('abandoned',[]).append({'attempt':copy.deepcopy(proposed),'reason':'stale attempt generation or scope'})
+                    save(r); continue
+                check(fresh,'stale attempt generation or scope')
                 row['attempt']=proposed
                 if not row.get('landing'):
                     previous=row.get('obligation') or {}

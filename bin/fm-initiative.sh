@@ -30,7 +30,8 @@
 #     refuses branch commits beyond the recorded landing; delivery retains the
 #     execution owner's no-mistakes proof before cleanup acquires its locks;
 #     discard is teardown under explicit --force authority and records the
-#     abandoned attempt when no landing or delivery evidence exists
+#     abandoned attempt when no landing or delivery evidence exists, or when
+#     reopen already cleared that attempt from the row
 #   recover: id, authority                      accept regenerated companion
 #   verify-provider: pr, repo, target             read-only capability check
 # Internal lifecycle callers may use:

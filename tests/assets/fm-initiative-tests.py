@@ -870,6 +870,27 @@ print('api_response:\\n  body: '+base64.b64encode(json.dumps(value).encode()).de
                 self.assertEqual(current['obligation']['event'],'discard')
         self.assertEqual(self.note.read_bytes(),self.original)
 
+    def test_forced_discard_after_reopen_records_abandonment(self):
+        row,sha=self.local_delivery(); self.merge_local()
+        self.git('checkout','-q','fm/task-1')
+        (self.repo/'file').write_text('follow-up'); self.git('commit','-qam','follow-up')
+        self.git('checkout','-q','main')
+        self.merge_local(False)
+        self.call('reopen',dict(id=self.iid,row=row,scope='Newly accepted scope',authority='accepted reopening'))
+        reopened=self.record()['rows'][row]
+        for event in ('teardown','local-retry'):
+            self.call('capture',dict(task='task-1',event=event),False)
+        self.hook('capture-task','task-1','discard',good=False,env=dict(self.env,FM_SUPERVISION_ACTOR='branch'))
+        self.assertEqual(self.record()['rows'][row],reopened)
+        self.hook('capture-task','task-1','discard')
+        current=self.record()['rows'][row]
+        self.assertEqual(current['abandoned'][-1]['attempt']['generation'],'generation-1')
+        self.assertEqual(current['abandoned'][-1]['attempt']['metadata']['spawn_gen'],'generation-1')
+        self.assertEqual({k:v for k,v in current.items() if k!='abandoned'},reopened)
+        self.assertIsNone(current['attempt']); self.assertIsNone(current['obligation']); self.assertIsNone(current['landing'])
+        self.assertEqual([v['commit'] for v in current['landing_history']],[sha])
+        self.assertEqual(self.note.read_bytes(),self.original)
+
     def test_forced_discard_still_retains_available_landing_evidence(self):
         row,sha=self.local_delivery(); self.intercept_capture('local')
         self.merge_local(False); self.restore_capture()
