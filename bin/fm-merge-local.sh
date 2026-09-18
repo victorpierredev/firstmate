@@ -112,6 +112,7 @@ if ! git -C "$PROJ" merge-base --is-ancestor "$DEFAULT" "$BRANCH"; then
 fi
 
 before=$(git -C "$PROJ" rev-parse --short "$DEFAULT")
+before_full=$(git -C "$PROJ" rev-parse "$DEFAULT")
 hold_status=0
 FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
   "$SCRIPT_DIR/fm-captain-hold.sh" open "$ID" --distinguish-absent || hold_status=$?
@@ -127,9 +128,21 @@ case "$hold_status" in
     ;;
 esac
 merge_status=0
-git -C "$PROJ" merge --ff-only "$BRANCH" >/dev/null || merge_status=$?
-fm_lock_release "$MERGE_CONTROL_LOCK" || true
-MERGE_CONTROL_LOCK=
+# Pin the delivered object so a later branch or target advance cannot become
+# the initiative receipt for this operation.
+expected_after=$(git -C "$PROJ" rev-parse "$BRANCH")
+git -C "$PROJ" merge --ff-only "$expected_after" >/dev/null || merge_status=$?
 [ "$merge_status" -eq 0 ] || exit "$merge_status"
 after=$(git -C "$PROJ" rev-parse --short "$DEFAULT")
+after_full=$expected_after
+# The exact result is captured while the approved fast-forward is serialized.
+# A receipt failure does not undo the merge or authorize another merge attempt.
+if { [ -e "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/initiative.json" ] || [ -L "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/initiative.json" ]; } &&
+    ! FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
+      "$SCRIPT_DIR/fm-initiative.sh" capture-task "$ID" local "$before_full" "$after_full" "$DEFAULT" >/dev/null; then
+  echo "error: local merge landed at $after_full, but initiative evidence remains pending; retain the task for reconciliation" >&2
+  exit 1
+fi
+fm_lock_release "$MERGE_CONTROL_LOCK" || true
+MERGE_CONTROL_LOCK=
 echo "merged $BRANCH into local $DEFAULT ($before -> $after) in $PROJ"

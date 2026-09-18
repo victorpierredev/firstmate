@@ -1,21 +1,21 @@
 # Firstmate, Initiative, and Obsidian
 
-## Review boundary
+## Accepted publication boundary
 
-This is a proposed design checkpoint, not a description of installed integration behavior or approval to implement it.
-It specifies how one human-readable initiative note can remain useful while Firstmate owns execution continuity.
-Review this design before producing the implementation plan, then deliver the approved stages through Firstmate's existing guarded delivery path.
-The checkpoint changes no runtime, global skill, vault content, or prototype code.
-
-The proposal's principal review points are the single-writer boundary, the conservative landed-commit rule, and the conditional-writer requirement in [Safe Markdown publication](#safe-markdown-publication).
-Approval of the design authorizes planning within these boundaries; it does not authorize deployment, a merge, or any change to existing initiatives.
+The accepted revision keeps the human initiative note outside every integration write path.
+Firstmate reads that note and maintains its own generated companion containing task status, landed commits, and concise proposed narrative updates.
+Obsidian can open the companion directly or render an embed that the human adds to their note.
+The integration never inserts that embed, modifies the human note, renames it, or archives it itself.
+This replaces the original same-file conditional-writer design; native Obsidian file writes are not treated as compare-and-swap.
+The original blueprint remains in Git history.
+Deployment, merges, scope expansion, and changes to existing initiatives retain their existing authority boundaries.
 
 ## Outcome and scope
 
 An initiative is a complete body of work, such as integrating Salesforce, composed of implementation tasks that together satisfy its completion criteria.
 The initiative note explains the objective, scope, approved implementation design, important decisions, completion criteria, and current position.
-Its task table has exactly four columns: `Task`, `Brief explanation`, `Status`, and `Commit`.
-Firstmate maintains those task statuses automatically and publishes only the final verified landed commit for a completed task.
+The generated companion's task table has exactly four columns: `Task`, `Brief explanation`, `Status`, and `Commit`.
+Firstmate maintains that separate table automatically and publishes only the final verified landed commit for a completed task.
 Detailed task specifications, dependencies, worker attempts, branches, validation, reviews, blockers, and recovery evidence belong in Firstmate's private execution records.
 Individual tasks receive no Obsidian note by default.
 A separate human note is appropriate only for substantial explanatory material, such as an investigation that changes the design, and the initiative links its conclusion.
@@ -90,8 +90,8 @@ Ownership is divided by meaning, not by which agent last touched a file.
 | Initiative objective, scope, design, and completion criteria | Human intent and its explicitly accepted revisions in the initiative note |
 | Durable decision and approval evidence | Existing Firstmate work-item/hold mechanisms; the note carries the concise human conclusion |
 | Execution specifications and continuity | Firstmate's existing backlog, briefs, reports, validation records, and lifecycle owners |
-| Task status and final landed commit | Verified Firstmate lifecycle facts, rendered into the note |
-| Task names and explanations | Human-facing wording in the note, initially supplied from the accepted task breakdown |
+| Task status and final landed commit | Verified Firstmate lifecycle facts, rendered into the generated companion |
+| Task names and explanations | Accepted wording in the private row binding and generated companion |
 | Initiative identity, row bindings, publication recovery | One new Firstmate initiative record owner |
 | Entry-point routing | Initiative skill, delegating execution to Firstmate |
 
@@ -104,6 +104,8 @@ Firstmate's [delivery and merge contract](../AGENTS.md#selected-delivery-path-an
 ## Initiative note schema
 
 For a new integrated initiative, the human entry point is `<work-root>/<initiative-name>/<initiative-name>.md`.
+A draft command returns a starter document to the caller; the human creates or edits that note using their editor.
+The integration may generate draft design and narrative suggestions in its companion, but never writes the human path.
 The work root is configured and validated; it is not inferred from the agent's current checkout or hardcoded to one workspace.
 The note is ordinary Markdown and readable without Dataview, an execution-board plugin, or access to private Firstmate files.
 Preserve the vault's existing frontmatter properties without adding execution identifiers to visible properties.
@@ -118,7 +120,7 @@ An initiative-level status property follows the vault's own lifecycle vocabulary
 | Important decisions | Concise choice, reason, authority/date, and source where useful; proposals are explicitly pending |
 | Completion criteria | Observable outcomes and any rollout or verification requirement beyond merging code |
 | Current position | A short account of what is available, what remains, and the next meaningful action |
-| Tasks | The four-column implementation table |
+| Tasks | An optional human-added link or embed of the generated four-column table |
 | Sources | Ticket and selected human-relevant references |
 
 Before design approval, the design section says `Proposed` and names the decision needed to proceed.
@@ -146,28 +148,26 @@ For local-only work, show the verified abbreviation without inventing a remote l
 
 Use one immutable random initiative UUID and one immutable random UUID per task row.
 IDs do not encode titles, order, feature names, branch names, or worktree locations.
-An HTML comment binds the document, and a comment inside the Task cell binds each row without adding visible columns.
+A standalone HTML comment in the human-authored note identifies an opt-in initiative:
 
 ```markdown
 <!-- firstmate:initiative v=1 id=4d18e357-a8f6-4f24-a655-355361a16c75 -->
-
-## Tasks
-
-<!-- firstmate:tasks v=1 -->
-| Task | Brief explanation | Status | Commit |
-| --- | --- | --- | --- |
-| <!-- firstmate:task id=f4c3eb6d-bdd5-4d10-8c7f-9cc68fb5e2a6 --> OAuth connection | Connect an account securely | Planned | - |
-<!-- /firstmate:tasks -->
 ```
 
-The parser recognizes these exact standalone region markers and row-comment forms outside fenced examples only.
-Exactly three marker conditions are conflicts that block publication: a malformed, nested, or unknown-version marker or region; a duplicated ID; and a registered initiative or row ID that no longer appears in the note, whether its row was deleted or only its marker was removed.
-None is resolved by guessing from the task title or row position.
-An unmarked row is never a conflict.
-It is a proposed task for intake, publication of the bound rows proceeds around it, and it receives an ID only through an accepted task addition.
-Renaming or reordering a marked row preserves its identity and does not respawn work.
-A copied note containing an existing initiative ID is a duplicate, not another registered initiative.
-Deleting a row is not cancellation authority; retain its binding and ask for scope reconciliation before removing it from the projection.
+The draft command supplies that comment; registration never inserts it into a file.
+Recognize the marker outside fenced examples only.
+Malformed, unknown-version, duplicated, or missing registered identity markers require reconciliation.
+Scan the configured work and archive roots for copied identities; a copied note is not another registration.
+A single identity-preserving human move within those roots updates the registered path after validation.
+Missing notes remain missing; never recreate a human deletion.
+
+Row IDs live in private bindings and hidden comments in the generated table.
+Task titles, explanations, order, scope revisions, additions, removals, and reopenings change only through explicit accepted record operations.
+New tasks proposed in human prose or an unmarked human table do not alter existing bindings or stop publication of accepted rows.
+Renaming a task does not respawn work or change its row identity.
+Deleting text from the human note is proposed scope input, never cancellation authority.
+The publisher generates its entire machine-owned companion and parses no human task table for write spans.
+Escaped pipes, inline code, fenced examples, Unicode, frontmatter, line endings, and every other byte of the human note remain unchanged because the integration only reads it.
 
 Keep durable linkage under the configured Firstmate data root, provisionally `data/initiatives/<initiative-id>/record.json`.
 The future initiative helper's header and help will own its exact versioned wire format.
@@ -178,7 +178,7 @@ Required semantic fields are:
 - For each row ID: durable backlog task ID, repository identity, intended integration branch, and task scope revision.
 - For an active attempt: task metadata generation and its execution binding, so an old worker or reused task name cannot update a replacement.
 - For each accepted landing: full commit ID, exact repository and target branch, canonical PR/MR identity or local merge receipt, covered task scope revision, and evidence provenance.
-- Last acknowledged publication revision and baseline of managed content, plus outstanding reconciliation or publication work.
+- Last acknowledged generated-content revision and baseline, plus outstanding reconciliation or publication work.
 
 Each implementation row normally binds one work item in the publishing home's backlog through all its worker attempts.
 A replacement attempt changes the attempt binding, not the human row identity.
@@ -264,8 +264,9 @@ An unrelated initiative decision does not reopen a correctly completed task, and
 ### Automatic update points
 
 Record projection work after accepted planning, committed spawn, authoritative blocked/resumed observations, hold/answer changes, PR registration, verified landing, scope changes, and teardown recovery.
-Use the existing supervision/reconciliation loop to publish pending changes, including an automatic backstop for missed observations.
-Successful publication should occur by the next successful supervision reconciliation cycle, with no manual command required.
+Use the existing supervision/reconciliation loop to publish pending companion changes, including an automatic backstop for missed observations.
+Successful publication occurs by the next successful main supervision reconciliation cycle, with no manual command required.
+The wake acknowledgement and deferred startup paths run the same reconciler; the watcher's cheap polling path performs no forge enrichment.
 Publication is idempotent, coalesces intermediate operational transitions, and writes nothing when rendered content is unchanged.
 A plain repair request for one initiative runs the same reconciler.
 
@@ -298,59 +299,46 @@ Capture either the verified landing receipt or an identity-complete unresolved l
 Teardown may proceed after that durable obligation exists and its own guards pass; vault unavailability must not strand safely landed worktrees.
 Failure to persist even the obligation refuses cleanup before destructive removal.
 
-## Safe Markdown publication
+## Separate generated publication
 
-Use one narrow deterministic publisher for binding, reconciliation, and note patches.
-The agent may propose prose, but it does not rewrite the entire Markdown document on every event.
-The publisher owns only the task table's Status and Commit cells during routine lifecycle publication.
-It preserves Task and Brief explanation wording, row order, unrelated tables, headings, comments, frontmatter, links, line endings, and every byte outside the selected edit spans.
-Accepted additions, removals, and narrative changes are separate explicit patch operations using the same safeguards.
-Support the template's controlled Markdown table grammar, including escaped pipes and inline code, and refuse ambiguous input rather than running a broad regular-expression replacement.
+Use one deterministic record and publication helper.
+Configure a dedicated generated root inside the selected vault, disjoint from the human work and archive roots.
+The generated companion is ordinary Markdown that Obsidian can read without a plugin, Dataview, or a running custom server.
+A visible header identifies it as generated and directs human edits to the human initiative note.
+It leads with the plain-language goal and current state, then completed work, the next useful action, genuine blockers or decisions, the four-column table, and stable human-relevant links.
+It is concise, skimmable, deterministic, and understandable without Firstmate internals.
+Worker/runtime vocabulary, duplicate event history, and unexplained operational identifiers are excluded from visible prose.
+Private home paths, endpoint IDs, operational logs, and task-report paths never appear in it.
 
-### Transaction and conflict contract
+### Transaction and recovery
 
-1. Resolve the registered initiative identity and path, validate ownership, and acquire the existing home/actor authority plus a per-initiative publication lock.
-2. Read the latest content and file identity, validate all markers and bindings, and compare managed fields with the last acknowledged baseline.
-3. Compute a patch from current authoritative facts against this latest content, retaining all non-conflicting manual edits.
-4. If the note has one of the marker conflicts defined in [Identity and Firstmate linkage](#identity-and-firstmate-linkage), or a human changed a machine-owned cell to a different value or altered a proposed narrative span, preserve the current document and record a conflict.
-5. Persist a private pending transaction containing the expected content revision, intended patch, candidate digest, and source observation revision before attempting publication.
-6. Apply a conditional content update through a writer that can enforce the expected revision at its serialization point.
-7. Read back and validate the result, acknowledge the publication revision, then retire the pending transaction.
+1. Validate the configured publishing home, caller authority, canonical roots, initiative identity, and registered note.
+2. Collect exact authoritative task observations outside the publication lock.
+3. Acquire the per-home initiative lock and reject an observation based on an older record revision.
+4. Preserve the human note unchanged and compute only the generated companion.
+5. Persist the candidate bytes and digest privately before publishing.
+6. Address the generated root through a validated directory descriptor; reject symlinks, hardlinks, special files, path substitution, and unowned destination collisions.
+7. Atomically replace only the registered machine-owned companion, read it back, acknowledge the revision, and retire the pending transaction.
 
-Concurrent Firstmate writers serialize through the same lock, and stale observations cannot overwrite a newer acknowledged source revision.
-Independent human changes outside edited spans are rebased onto the latest content rather than rejected solely because the whole file hash changed.
-A human edit already equal to the intended value can be accepted as converged, but it never establishes execution or landing evidence.
-Keep original/candidate/conflicting snapshots in private recovery storage, not beside the human note as agent reports.
-After a crash, matching candidate bytes finish acknowledgement; matching baseline bytes retry; any other content is re-read and reconciled instead of overwritten.
-Bound routine recovery retention while retaining every unresolved conflict until it is handled.
+The generated root has one publishing-home ownership record and no other publisher may adopt it.
+Changed generated files produce a recoverable conflict rather than an inferred human approval or execution fact.
+Original, candidate, and conflict evidence stays private.
+After a crash, matching candidate content completes acknowledgement, matching previous generated content retries, and other content retains a conflict for review.
+No change writes nothing.
+Bound resolved publication recovery while retaining unresolved evidence.
+A temporary offline vault preserves execution facts and pending work; recovery publishes on the next successful reconciliation.
 
-### The conditional writer is a required boundary
-
-An advisory lock plus a hash check followed by an unconditional rename is not an atomic compare-and-swap against Obsidian or a sync client.
-It also cannot protect a human's unsaved editor buffer.
-Do not claim that pattern guarantees preservation of concurrent manual edits.
-
-Automatic status publication is required behavior, so the conditional writer in step 6 is a precondition of the implementation, not an optional enhancement.
-This checkpoint has not verified a writer with that guarantee.
-The first implementation stage must prove the smallest writer that serializes an update with the note's current content, including the active editor's buffer, and rejects a stale expected revision.
-The proof runs against the actual editor and covers simultaneous edit and save, an unsaved buffer, and competing filesystem and sync writers, which the writer must coordinate or exclude.
-It does not infer exclusivity from a quiet mtime or an absent open-file handle alone.
-Prefer an already available supported editor integration that proves this contract.
-Add a new local component only if none does, and then limit its authority to applying a validated patch to the registered note and returning the resulting content revision, with no queue, task, shell-command, or merge authority.
-Concurrent editing from another device is unsupported unless that writer participates in the same conflict-safe update contract.
-
-Stage 1 selects exactly one proven writer.
-If no writer can be proven, implementation stops and the design returns to review.
-There is no accepted outcome in which the integration ships with automatic publication disabled, and no fallback to filesystem last-writer-wins behavior.
-
-A temporary failure of the proven writer, such as an offline vault, is different from that outcome.
-Retain the pending publication, report the stale human view through Firstmate, and publish on the next successful cycle; never perform a blind overwrite.
+This is atomic replacement of a machine-owned artifact, not conditional writing against an editor buffer or arbitrary sync client.
+The no-overwrite guarantee applies to the human note, which is never opened for writing, replaced, moved, or deleted by the integration.
+The generated namespace is reserved for Firstmate and is not a second human-authoring surface.
+Independent editing of generated files is unsupported; do not mistake a changed generated cell for task or landing evidence.
+The native-writer qualification gate is retired by the accepted separation decision.
 
 ## Human narrative policy
 
-Update the human narrative when scope or direction changes, a durable decision is accepted, an investigation changes the solution, a material blocker appears or clears, meaningful work lands, or completion/archival changes the initiative's position.
+Propose a concise human narrative update in the companion when scope or direction changes, a durable decision is accepted, an investigation changes the solution, a material blocker appears or clears, meaningful work lands, or completion/archival changes the initiative's position.
 Task starts and ordinary lifecycle changes update table cells without adding progress-log entries.
-Rewrite Current position as a compact present-tense summary, normally one paragraph and at most three next/blocker bullets.
+Render the companion's Current position as a compact present-tense summary, normally one paragraph and at most three next/blocker bullets.
 Do not append a dated line for every task event.
 Important decisions state the choice and reason, with approval provenance or an explicit pending label.
 Do not paste task briefs, agent messages, terminal output, commands, CI retries, review rounds, endpoint IDs, or transient failures into the note.
@@ -361,21 +349,23 @@ An explicit authenticated instruction accepting that change supplies the approva
 Preserve the user's words and pause only affected dispatch or landing when their consistency with the approved design is uncertain.
 Unrelated work may continue under its existing authorization.
 Cosmetic renames or wording edits do not require repeating design approval, but they never silently broaden an execution brief.
-Accepted narrative patches use the same revision and conflict protections as lifecycle publication.
+Accepted narrative proposals are stored with provenance and rendered in the companion.
+The human decides whether to incorporate them into the human note; the integration never applies prose patches there.
 
 The initiative is complete only when its in-scope implementation rows have landed, its human completion criteria are satisfied, and remaining calls or follow-ups have an explicit disposition.
 All rows being `Done` is necessary for ordinary implementation completion but does not prove rollout, adoption, or other non-code criteria.
-Archive only through an explicitly authorized, collision-safe operation that updates the registered note path without changing its initiative ID.
+Archival requires explicit authority and a human-performed move into the configured archive root.
+The integration validates the unique preserved identity and completion evidence, then updates its registered path and archive state without moving or replacing human files.
 
 ## Failure and reconciliation
 
 | Failure or race | Required result |
 | --- | --- |
 | Vault offline, permission failure, or temporarily unavailable writer | Keep execution facts and pending publication durable, report the stale view without changing task truth, and publish on recovery |
-| Editor conflict or damaged markers | Leave the note untouched and expose one deduplicated reconciliation issue through Firstmate |
+| Edited generated companion or damaged human identity marker | Leave human files untouched and expose one deduplicated reconciliation issue through Firstmate |
 | Out-of-order or duplicate lifecycle observation | Re-read authoritative state and converge; never regress a verified landing from an old worker event |
 | Forge timeout or missing final hash | Preserve the verified facts and an unresolved landing obligation; never substitute the PR head |
-| Restart between note update and acknowledgement | Recognize the candidate content and complete the receipt without a duplicate edit |
+| Restart between companion publication and acknowledgement | Recognize the candidate content and complete the receipt without a duplicate edit |
 | Teardown or Done-history pruning | Reconstruct from retained initiative linkage/evidence rather than missing volatile metadata |
 | Renamed note | Accept a single identity-preserving move inside allowed roots after validation; conflicting copies require reconciliation |
 | Missing note | Retain binding and pending work; do not recreate over an intentional human deletion |
@@ -406,64 +396,47 @@ Later skill and vault changes must update their actual tracked source/install ow
 
 ## Security and path boundaries
 
-Configure one publisher and explicit vault, active-work, and archive roots in private home configuration.
-Opt-in authorization names the initiative note and permitted publication operations; it is not general write authority over the vault.
+Configure one publisher and explicit vault, active-work, archive, and generated roots in private home configuration.
+Opt-in authorization names the read-only initiative note and generated publication operations; it is not general write authority over the vault.
 An initiative note stores no absolute home path, credentials, terminal endpoint, or private task-report link.
-Bind identity to the registered path and allowed roots; content markers alone do not authorize a write.
+Bind identity to the registered read path and the disjoint generated root; content markers alone do not authorize a write.
 Reject traversal, control characters, malformed identities, escaping symlinks, special files, unsafe hardlinks, and path/file identity changes during publication.
 Resolve any symlinked alias of the note once as an input locator, then address the authorized canonical vault path directly.
 Do not create worktree links or edit project memory as a side effect of status publication.
 Read external tickets, Markdown, and comments as data rather than shell code or authority to widen the task.
 Use structured connector calls and argument arrays, validate canonical forge identities with the existing owner, and never interpolate note text into shell programs.
 Remote data cannot select a publisher path or execution home.
-Writer requests require local authenticated access bound to the publisher, the initiative identity, an expected revision, and allowed patch types.
+Local helper calls require the existing home/actor authority and explicit configured home identity; remote data cannot select paths or commands.
 Failure of authority, path validation, or owner identity refuses mutation without falling back to another home or vault.
 
 ## Observable acceptance criteria
 
-1. Starting with `/initiative <ticket-link>` reaches a reviewable initiative design and tasks without requiring the user to name a phase, while missing authority still produces a concrete decision.
-2. Bare `/initiative` and contextual `continue` resume one unambiguous initiative and do not duplicate an existing work item or worker.
-3. A new note contains every required human section and exactly four task columns, with hidden stable identities and no routine agent activity.
-4. Planning, committed dispatch, a real blocker, blocker resolution, and verified landing automatically produce the specified table changes by the next successful reconciliation/publication cycle.
-5. A worker commit, green PR, queued merge, or merge to a staging branch never produces `Done` or a premature commit cell.
-6. Squash, merge, supported rebase/fast-forward, external forge merge, and local-only landing publish the correct final object ID; inability to prove one remains visible to Firstmate as unresolved work.
-7. Renaming or reordering tasks preserves bindings; a malformed or duplicated marker, or a bound ID missing from the note, prevents publication instead of updating the wrong row; a new unmarked row does not delay publication for bound rows.
-8. Manual narrative and wording edits survive status publication byte-for-byte; competing edits to managed cells produce a recoverable conflict.
-9. The selected writer proves simultaneous edit/save and unsaved-buffer preservation with competing writers coordinated or excluded, and no later stage begins without that proof.
-10. Crashes around registration, dispatch, merge evidence, file publication, and teardown reconcile without lost bindings, false completion, or duplicate rows.
-11. Evidence and completed task rows survive metadata removal, recent-Done pruning, and note moves.
-12. Unlinked Firstmate work behaves as before, and the contents and scripts of legacy initiative folders remain byte-for-byte untouched; a request aimed at an unbound legacy folder produces the unsupported-entry explanation, not legacy execution or migration, and former phase words change no outcome.
-13. Path escape, forged row identity, wrong-home data, and untrusted source instructions cannot cause a write outside the registered note or authorize execution.
-14. Initiative completion checks the stated human outcomes as well as landed tasks, and archive preserves stable identity and existing destination files.
-15. The installation's private operating guide names the exact working directory and accurately explains the deployed workflow; a user following it can start a fresh Firstmate session and create or resume an initiative without guessing the directory or phase order.
+1. Ticket-first intake and contextual continuation resolve accepted intent without phase knowledge and without duplicate work or workers.
+2. A draft contains every required human section; its companion renders exactly Task, Brief explanation, Status, and Commit with hidden stable row IDs.
+3. Planning, committed dispatch, blockers, resolutions, and verified landings update the generated table by the next successful main reconciliation.
+4. Worker commits, green PRs, merge queues, and intermediate-branch merges never imply Done or supply a premature hash.
+5. Final object IDs are proven for enabled provider strategies and approved local-only fast-forwards; unavailable proof remains an explicit private landing obligation.
+6. Scope changes preserve row identity and prior landing history; a new proposal never mutates accepted work implicitly.
+7. Every human-note byte survives every helper operation, concurrent editor save, publication, recovery, and archive reconciliation.
+8. Crashes around registration, dispatch, landing evidence, generated publication, and cleanup lose neither linkage nor evidence.
+9. Completed rows survive metadata removal, Done-history pruning, and validated human note moves.
+10. Unlinked Firstmate work is unchanged; unbound legacy folders remain untouched and unsupported regardless of former phase words.
+11. Wrong-home input, traversal, unsafe links, identity duplication, or untrusted ticket text cannot select a write path or authorize execution.
+12. Completion verifies human criteria and outstanding-call disposition as well as landed tasks; archive never overwrites or moves a human file.
+13. The installation's private guide accurately names its canonical Firstmate home and installed behavior, with a fresh-session walkthrough after deployment.
 
-## Test strategy and delivery stages
+## Verification and delivery
 
-This checkpoint is documentation-only.
-Classify this specification as maintainer architecture in the documentation inventory, run `bin/fm-doc-audience-check.sh`, review local link targets and the complete branch diff, and run `git diff --check` before committing.
-Keep checkpoint command output and review history in task/PR evidence, not in the human initiative note or this design.
+Use temporary Firstmate homes, temporary vaults, real temporary Git repositories, and stubbed forge responses.
+Exercise public helper behavior through the existing behavior runner, with focused lifecycle suites.
+Test human-note byte preservation with Markdown escapes, fences, Unicode, CRLF, tables, and frontmatter, including concurrent external replacement while publication runs.
+Use deterministic concurrency and failure injection at persistence boundaries, not timing-only guesses.
+Cover marker/path/ownership refusals, scope and task identity, all four statuses, unknown observations, stale generations, grouped coverage, wrong targets, rewritten history, missing objects, offline providers, recovery, and retained cleanup obligations.
+Verify native Obsidian rendering of the generated Markdown in a disposable vault; no editor writer or custom runtime plugin is required.
+Provider field semantics require fixtures and a live read-only supported-provider check before enabling a strategy.
+Shared lifecycle seams cover all supported harnesses and runtime backends; add live vendor tests only when a new verdict depends on vendor behavior.
 
-Implementation tests use temporary Firstmate homes, temporary vaults, real temporary Git repositories, and stubbed forge responses by default.
-Port prototype behaviors rather than its test runner, and use the existing Firstmate behavior-test runner and focused lifecycle suites.
-Exercise public helper behavior rather than asserting implementation source text.
-Cover Markdown escapes, fences, Unicode, line endings, preserved frontmatter, task renames/reordering, unmarked proposal rows, manual cell edits, duplicate IDs, interrupted transactions, and symlink replacement races.
-Use coordinated concurrent writers and injected failures at persistence boundaries rather than timing-only tests.
-Test every lifecycle mapping, grouped PR coverage, deleted source branches, rewritten heads, stale observations, wrong targets, unavailable providers, and missing commit objects.
-Extend existing spawn/backlog atomicity, PR merge/poll, captain-hold, and teardown tests where their contracts gain a publication obligation.
-Verify supported backlog adapters separately and make unsupported manual tracking explicit.
-No runtime harness/backend receives a new parser or launch path; verify the shared integration seam across affected adapters, with live checks where a verdict depends on vendor behavior.
-Use a disposable Obsidian vault for the required live writer verification and a controlled forge fixture for provider semantics, never the real initiative vault as a test fixture.
-
-The following stages are inputs to a later writing-plans pass, not implementation instructions authorized by this checkpoint.
-
-| Stage | Scope and principal owners | Exit evidence |
-| --- | --- | --- |
-| 1. Prove publication and landing boundaries | Prove the smallest safe conditional writer against the live editor, and verify supported provider commit semantics, the actual skill installation owner, and existing backlog read interfaces | A reviewed capability result with concrete supported limits and exactly one proven writer; without that proof, implementation is blocked and the design returns to review |
-| 2. Bind and publish a temporary initiative | Add the minimal private record/helper, note template, hidden IDs, the proven writer, conflict/recovery path, and documentation owners | Temporary-vault tests and the real-editor concurrent-save guard pass |
-| 3. Connect authoritative lifecycle facts | Integrate planning, spawn/current-state/hold observations, merge evidence, and teardown retention with existing owners | End-to-end planned-to-landed projection, crash recovery, and premature-completion refusal across selected delivery modes |
-| 4. Add conversational intake and resume | Update the tracked Initiative router and internal Firstmate skill, accepted-design briefing, and automatic next-step resolution | Ticket intake and fresh-session continuation work without phase knowledge or competing supervisors; a request aimed at an unbound legacy folder yields the unsupported-entry explanation with the folder unchanged, whatever words it uses |
-| 5. Pilot | Run one approved new initiative, deploy the reviewed skill, template, and writer changes, and update the private operating guide with the exact working directory and installed workflow | A real initiative remains concise through a guarded task landing and a session restart, with its statuses and landed commit published automatically; a fresh-session walkthrough confirms the private guide matches the deployed installation |
-
-Each stage has its own bounded task brief and validation evidence through the configured Firstmate delivery process.
-A stage begins only after the stages it depends on have passed.
-Only after the reviewed checkpoint and implementation plan are accepted should runtime, installed skill, or vault template work begin.
+Deliver in order: record and publication boundary; authoritative lifecycle integration; conversational entry and installation ownership; then guarded deployment and an approved new initiative pilot.
+The pilot verifies automatic landed status and a session restart, and refreshes the private operating guide.
+Global skill installation and real-vault deployment occur through their explicit deployment owner, not by editing an installed copy from an implementation worktree.
+The helper header owns exact commands and record formats; configuration documentation owns home settings; the internal skill owns operating decisions.

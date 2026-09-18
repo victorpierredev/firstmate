@@ -757,6 +757,12 @@ if [ -n "$ACK_THROUGH" ]; then
     printf 'wake drain: acknowledged wakes through %s (%s row(s) consumed), but a newer recovery episode is pending; re-run bin/fm-wake-drain.sh and use the new WAKE_ACK_REQUIRED command\n' \
       "$ACK_THROUGH" "$ACK_REMOVED" >&2
   fi
+  # Publish linked initiative state after main has handled this cycle, outside
+  # the wake-queue lock. Slow forge reads never enter the watcher polling path.
+  if [ "$ACTOR" = main ] && [ -f "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/initiative.json" ]; then
+    FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-initiative.sh" reconcile >/dev/null \
+      || echo 'initiative reconciliation deferred; its durable records remain pending' >&2
+  fi
   exit 0
 fi
 

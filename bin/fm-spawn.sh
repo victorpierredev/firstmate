@@ -2967,6 +2967,12 @@ if [ "$SPAWN_META_LOCK_HELD" != 1 ]; then
   fm_lock_acquire_wait "$SPAWN_META_LOCK"
   SPAWN_META_LOCK_HELD=1
 fi
+# Bound initiative rows require an accepted current design before dispatch.
+if [ -e "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/initiative.json" ] || [ -L "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/initiative.json" ]; then
+  FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_DATA_OVERRIDE="$DATA" \
+    "$SCRIPT_DIR/fm-initiative.sh" check-task "$ID" >/dev/null || exit 1
+fi
+
 if [ -e "$STATE/$ID.backlog-close" ] || [ -L "$STATE/$ID.backlog-close" ]; then
   echo "error: task $ID has a pending authoritative backlog close at $STATE/$ID.backlog-close; finish or repair that close before dispatching a new worker" >&2
   exit 1
@@ -4631,6 +4637,13 @@ if [ -n "$SPAWN_DEFERRED_SIGNAL" ]; then
   trap - HUP INT TERM
   echo "error: spawn of $ID was interrupted after launch delivery began; $SPAWN_PRESERVED_CLAIM" >&2
   exit "$SPAWN_DEFERRED_SIGNAL_STATUS"
+fi
+# Dispatch is already committed. A missed local observation is recovered from
+# metadata on reconciliation; it never rolls back a successfully launched task.
+if [ -e "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/initiative.json" ] || [ -L "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/initiative.json" ]; then
+  FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_DATA_OVERRIDE="$DATA" \
+    "$SCRIPT_DIR/fm-initiative.sh" capture-task "$ID" spawn >/dev/null \
+    || echo "warning: initiative dispatch observation for $ID is pending reconciliation" >&2
 fi
 fm_lock_release "$SPAWN_META_LOCK"
 SPAWN_META_LOCK_HELD=0

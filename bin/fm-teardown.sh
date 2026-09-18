@@ -3382,6 +3382,17 @@ else
   fi
 fi
 
+# Persist either landing evidence or an identity-complete obligation before
+# any destructive cleanup. This touches local private records only, not a vault
+# or forge; failure retains the source metadata and worktree for a safe retry.
+if [ "$KIND" != secondmate ] && { [ -e "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/initiative.json" ] || [ -L "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/initiative.json" ]; }; then
+  FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_DATA_OVERRIDE="$DATA" \
+    "$SCRIPT_DIR/fm-initiative.sh" capture-task "$ID" teardown >/dev/null || {
+    echo "error: initiative evidence for $ID could not be retained; refusing cleanup" >&2
+    exit 1
+  }
+fi
+
 # Every landed/discard-work refusal above has now passed (or --force skipped
 # them). Fix 1 and Fix 2 (see script header) run here, unconditionally on
 # --force, and before ANY destructive step below - a still-parked run or a

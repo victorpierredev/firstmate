@@ -75,6 +75,13 @@ fm_merge_outcome_report() {  # <home> <state> <task-id> <pr-url> <origin> [autho
   number=$FM_PR_NUMBER
   [ -d "$state" ] && [ ! -L "$state" ] || return 1
 
+  # Both performed and externally observed merges retain one local landing
+  # obligation. Forge enrichment belongs to later supervisor reconciliation.
+  if [ -e "${FM_CONFIG_OVERRIDE:-$home/config}/initiative.json" ] || [ -L "${FM_CONFIG_OVERRIDE:-$home/config}/initiative.json" ]; then
+    FM_HOME="$home" FM_STATE_OVERRIDE="$state" \
+      "$_FM_MERGE_OUTCOME_LIB_DIR/fm-initiative.sh" capture-task "$id" merge "$url" >/dev/null || return 1
+  fi
+
   if destination=$(fm_parent_channel_destination "$home" "$state"); then
     line="done [key=merged-$id]: merged $id $FM_PR_URL$suffix"
   else

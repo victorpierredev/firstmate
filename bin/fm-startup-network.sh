@@ -497,6 +497,9 @@ EOF
       bash -c '
         script_dir=$1
         "$script_dir/fm-inactive-reconcile.sh" scan --startup >/dev/null 2>&1 || true
+        if [ -f "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/initiative.json" ]; then
+          "$script_dir/fm-initiative.sh" reconcile >/dev/null || true
+        fi
         exec "$script_dir/fm-bootstrap.sh"
       ' _ "$SCRIPT_DIR" >"$out" 2>&1 || rc=$?
   else

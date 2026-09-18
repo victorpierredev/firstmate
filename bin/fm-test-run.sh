@@ -1630,6 +1630,9 @@ families_for_changed_path() {
       families_for_test_reference "$(basename "$path")" \
         || printf '%s\n' "__unmapped__:$path"
       ;;
+    bin/fm-initiative.sh|bin/fm-initiative.py|bin/fm-initiative-source.sh|tests/assets/fm-initiative-tests.py)
+      printf '%s\n' '__script__:fm-initiative.test.sh'
+      ;;
     bin/*)
       # A deleted script has no consuming suite left to select, the same rule
       # the fixture case above applies. Refusing on its absent mapping would

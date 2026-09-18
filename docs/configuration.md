@@ -1191,3 +1191,42 @@ Only after those retries exhaust does it remove the lock, and only when it is pr
 A live lock, a missing `lsof`, any failed check, or any other fetch failure keeps today's behavior.
 Every wait, retry, and removal is printed to stderr, and a successful recovery also prints one `recovered:` summary line to stdout so a session-start refresh - which discards fleet-sync stderr and relays only stdout - still surfaces it.
 The shared staleness proof lives in `bin/fm-lock-lib.sh`, which both `fm-teardown.sh` and `fm-fleet-sync.sh` use.
+
+## Initiative and Obsidian
+
+Initiative tracking is opt-in per Firstmate home.
+The helper and lifecycle projection are implemented; conversational skill deployment remains a separate delivery step.
+The [integration blueprint](initiative-obsidian-integration.md) defines the read-only human-note boundary and generated companion.
+`bin/fm-initiative.sh --help` owns exact commands, request fields, and record formats.
+
+Configuration lives in private `config/initiative.json` and pins one canonical publishing home, its private data/state roots, one existing vault, and three relative directories: active work, archive, and generated output.
+Create these directories through the installation's ordinary setup before configuring.
+The generated directory must initially be empty and disjoint from both human directories; private operational roots must remain outside the vault.
+A generated-root ownership receipt refuses another home, including one with copied configuration.
+Manual-backend homes cannot bind automatic task tracking; structured tasks-axi reads are required.
+The Python helper uses the existing Python 3 toolchain and requires Python 3.9 or newer.
+
+For example, from the publishing home with `FM_HOME` explicitly set, pass this JSON as a request file to `bin/fm-initiative.sh configure`:
+
+```json
+{
+  "vault": "/absolute/path/to/vault",
+  "work": "Work",
+  "archive": "Archive",
+  "generated": "Firstmate status"
+}
+```
+
+The helper's `draft` command returns starter Markdown for the human to create in their editor.
+Registration reads its stable identity marker; it never creates, edits, moves, or replaces the human note.
+Generated companions live at `<generated>/<initiative-uuid>.md` and can be opened directly in Obsidian.
+The human may add an embed such as `![[Firstmate status/<initiative-uuid>]]` to their plan; the integration does not insert it.
+An offline vault retains private facts and pending publication, and normal main wake acknowledgement or deferred startup retries reconciliation.
+A changed generated companion needs explicit recovery; its previous content remains private evidence.
+The generated namespace is reserved for Firstmate, and is not a human-authoring surface or an editor compare-and-swap service.
+
+GitHub final-object verification uses authenticated `gh-axi` reads, exact accepted row coverage, the merged pull request's integration target and resulting commit, and ancestry verification against that target.
+GitLab final-object enrichment is not qualified in this implementation; linked GitLab deliveries retain a visible private obligation and withhold Done and the commit until proof is available.
+Unlinked GitLab work retains its current behavior.
+Local-only receipts are captured by the existing approved fast-forward owner while its control lock is held.
+A merge with failed evidence retention is reported as landed with pending evidence, never retried as another merge.
